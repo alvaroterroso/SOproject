@@ -50,4 +50,10 @@ int shm_id;
 //log filename
 char filename[MAX_STRING_SIZE];
 
+//config file
+config_struct config;
+
+//threads
+pthread_t receiver_thread, sender_thread;
+
 #endif
