@@ -6,6 +6,19 @@
 //CRIAR THREADS
 #include "system_manager.h"
 
+int main(int argc, char **argv){
+	printf("System starting...\n");
+	if (argc < 2) {
+        fprintf(stderr, "Usage: %s <config-file-path>\n", argv[0]);
+        return 1;
+    }
+	strcpy(filename, argv[1]);
+	if(!validate_config(filename)) exit(0);
+	printf("%s read\n", filename);
+	init_prog();
+	return 0;
+}
+
 void init_prog(){
 	//size incomplete
 	int shm_size = sizeof(config_struct) + sizeof(mobile_user_struct);
@@ -13,10 +26,44 @@ void init_prog(){
     	printf("ERROR IN SHMGET\n");
     	exit(1);
   	}
-	if(shmat(shm_id, NULL, 0) < 0){
+	if(shmat(shm_id, NULL, 0) == (void*)-1){
 		printf("ERROR IN SHMAT\n");
 		exit(0);
 	}
+	// Create threads
+	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0)
+	{
+		printf("CANNOT CREATE SENDER_THREAD\n");
+		exit(1);
+	}
+
+	if (pthread_create(&receiver_thread, NULL, receiver_function, NULL) != 0)
+	{
+		printf("CANNOT CREATE RECEIVER_THREAD\n");
+		exit(1);
+	}
+
+	if(pthread_join(sender_thread, NULL)!= 0){
+		printf("CANNOT JOIN SENDER_THREAD\n");
+		exit(1);
+	}
+
+	if(pthread_join(receiver_thread, NULL)!= 0){
+		printf("CANNOT JOIN RECEIVER_THREAD\n");
+		exit(1);
+	}
+}
+
+void *sender_function(void *arg){
+	(void)arg;
+	printf("sender thread functional...\n");
+	return NULL;
+}
+
+void *receiver_function(void *arg){
+	(void)arg;
+	printf("receiver thread functional...\n");
+	return NULL;
 }
 
 bool validate_config(char *filename) {
@@ -63,16 +110,4 @@ bool validate_config(char *filename) {
 
     fclose(f);
     return true;
-}
-
-int main(int argc, char **argv){
-	printf("System starting...\n");
-	if (argc < 2) {
-        fprintf(stderr, "Usage: %s <config-file-path>\n", argv[0]);
-        return 1;
-    }
-	strcpy(filename, argv[1]);
-	if(!validate_config(filename)) return 0;
-	printf("%s read\n", filename);
-	init_prog();
 }
