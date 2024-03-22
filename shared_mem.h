@@ -56,4 +56,8 @@ config_struct config;
 //threads
 pthread_t receiver_thread, sender_thread;
 
+//process
+pid_t auth_request_manager_pid, monitor_engine_pid;
+
 #endif
+
