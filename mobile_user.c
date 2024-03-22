@@ -1,5 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include "mobile_user.h"
 
 int main(int argc, char **argv){
@@ -11,7 +9,7 @@ int main(int argc, char **argv){
 	}
 	mobile_user_struct *mobile_user = malloc(sizeof(mobile_user_struct));
 	for(int i = 1; i < 7; i++){
-		if(argv[i] < 0){
+		if(atoi(argv[i]) < 1){
 			printf("INPUT ERROR!\n%d must be < 0", atoi(argv[i]));
 			exit(1);
 		}
@@ -24,5 +22,8 @@ int main(int argc, char **argv){
 	mobile_user->social_interval = atoi(argv[5]);
 	mobile_user->to_reserve_data = atoi(argv[6]);
 
+	printf("Mobile user data as been saved in mobile_user struct\n");
+	free(mobile_user);
 	return 0;
 }
+
