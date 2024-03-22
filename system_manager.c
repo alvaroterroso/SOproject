@@ -16,7 +16,13 @@ int main(int argc, char **argv){
 	if(!validate_config(filename)) exit(0);
 	printf("%s read\n", filename);
 	init_prog();
+	free_shared(shm_id);
 	return 0;
+}
+
+void free_shared(int shm_id){
+	shmdt(&shm_id);
+	shmctl(shm_id, IPC_RMID, NULL);
 }
 
 void init_prog(){
@@ -34,29 +40,63 @@ void init_prog(){
 	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0)
 	{
 		printf("CANNOT CREATE SENDER_THREAD\n");
+		free_shared(shm_id);
 		exit(1);
 	}
 
 	if (pthread_create(&receiver_thread, NULL, receiver_function, NULL) != 0)
 	{
 		printf("CANNOT CREATE RECEIVER_THREAD\n");
+		free_shared(shm_id);
 		exit(1);
 	}
 
 	if(pthread_join(sender_thread, NULL)!= 0){
 		printf("CANNOT JOIN SENDER_THREAD\n");
+		free_shared(shm_id);
 		exit(1);
 	}
 
 	if(pthread_join(receiver_thread, NULL)!= 0){
 		printf("CANNOT JOIN RECEIVER_THREAD\n");
+		free_shared(shm_id);
 		exit(1);
 	}
+	create_proc();
+}
+
+void auth_request_manager(){
+	printf("authorization Request Manager process created...\n");
+}
+void monitor_engine(){
+	printf("monitor Engine processs created...\n");
+} 
+
+void create_proc(){
+	auth_request_manager_pid = fork();
+	if(auth_request_manager_pid == 0){
+		auth_request_manager();
+		return;
+	}
+	else if(auth_request_manager_pid < 0){
+		perror("auth_request_manager fork failed");
+		free_shared(shm_id);
+	}
+	monitor_engine_pid = fork();
+	if(monitor_engine_pid == 0){
+		monitor_engine();
+		return;
+	}
+	else if(monitor_engine_pid < 0){
+		perror("monitor_engine fork failed");
+		free_shared(shm_id);
+	}
+	wait(NULL);
 }
 
 void *sender_function(void *arg){
 	(void)arg;
-	printf("sender thread functional...\n");
+	printf("sender thread functional... \n");
 	return NULL;
 }
 
