@@ -11,5 +11,12 @@ void *sender_function(void *arg);
 
 void *receiver_function(void *arg);
 
+void free_shared(int shm_id);
+
+void auth_request_manager();
+
+void monitor_engine();
+
+void create_proc();
 
 #endif
