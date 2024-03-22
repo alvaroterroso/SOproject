@@ -10,13 +10,14 @@ clean:
 	rm -f *.o *~ $(PROGS)
 
 5g_auth_platform: system_manager.o 
-	$(CC) $^ $(FLAGS) $(LIBS) -o $@
+	$(CC) system_manager.o $(FLAGS) $(LIBS) -o 5g_auth_platform
 
 mobile_user: mobile_user.o
-	$(CC) $^ $(FLAGS) $(LIBS) -o $@
+	$(CC) mobile_user.o $(FLAGS) $(LIBS) -o mobile_user
 
 backoffice_user: backoffice_user.o
-	$(CC) $^ $(FLAGS) $(LIBS) -o $@
+	$(CC) backoffice_user.o $(FLAGS) $(LIBS) -o backoffice_user
 
-%.o: %.c $(HDRS)
-	$(CC) $(FLAGS) -c $< -o $@
+%.o: %.c
+	$(CC) -c $< -o $@
+
