@@ -1,4 +1,5 @@
 #include "mobile_user.h"
+#include "log.h"
 
 int main(int argc, char **argv){
 	if(argc < 7){
@@ -22,7 +23,7 @@ int main(int argc, char **argv){
 	mobile_user->social_interval = atoi(argv[5]);
 	mobile_user->to_reserve_data = atoi(argv[6]);
 
-	printf("Mobile user data as been saved in mobile_user struct\n");
+	log_message("Mobile user data as been saved in mobile_user struct\n");
 	free(mobile_user);
 	return 0;
 }
