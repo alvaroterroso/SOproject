@@ -1,12 +1,9 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
-#define FILENAME "simulation_log.txt"
-// Mutex for thread-safe logging
-pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER; //usar mutex por ser o mais simples por deixar o acesso exclusivo a uma thread
+#include "log.h" 
+#include "shared_mem.h"
+#include <time.h>
 
 // Function to log messages
-void log_message(const char* message) {
+int log_message(char* message) {
     time_t rawtime;
     struct tm* timeinfo;
     char buffer[80];
@@ -23,6 +20,7 @@ void log_message(const char* message) {
     if (!log_file) {
         perror("Failed to open log file");
         pthread_mutex_unlock(&log_mutex);//liberar o mutex antes de sair para evitar deadlocks
+		return 1;
         exit(EXIT_FAILURE);
     }
 
@@ -33,4 +31,5 @@ void log_message(const char* message) {
 
     fclose(log_file);
     pthread_mutex_unlock(&log_mutex);
+	return 0;
 }

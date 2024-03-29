@@ -27,6 +27,8 @@
 
 #define MAX_STRING_SIZE 256
 
+#define FILENAME "log.txt"
+
 typedef struct config_struct{
 	int queue_slot_number;
 	int max_auth_servers;
@@ -44,11 +46,17 @@ typedef struct mobile_user_struct{
 	int to_reserve_data;
 }mobile_user_struct;
 
+//mobile_user count
+int mobile_user_count;
+
 //inicializar shared memorym
 int shm_id;
 
-//log filename
+//config filename
 char filename[MAX_STRING_SIZE];
+
+//log file
+char log_msg[MAX_STRING_SIZE];
 
 //config file
 config_struct config;
@@ -58,6 +66,9 @@ pthread_t receiver_thread, sender_thread;
 
 //process
 pid_t auth_request_manager_pid, monitor_engine_pid;
+
+//mutex log
+pthread_mutex_t log_mutex; // Extern keyword added here
 
 #endif
 

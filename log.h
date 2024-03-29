@@ -1,12 +1,9 @@
-#ifndef LOG_H
-#define LOG_H
+#ifndef log
+#define log
 
-#include <pthread.h>
+#include "shared_mem.h"
 
-// Declaração do mutex para uso externo, se necessário.
-extern pthread_mutex_t log_mutex;
+// Protótipo da função log_message
+int log_message(char* message);
 
-// Protótipo da função log_message.
-void log_message(const char* message);
-
-#endif // LOG_H
+#endif // log

@@ -1,0 +1,7 @@
+{
+	"files.associations": {
+		"shared_mem.h": "c",
+		"mobile_user.h": "c",
+		"system_manager.h": "c"
+	}
+}

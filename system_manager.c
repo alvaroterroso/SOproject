@@ -1,68 +1,71 @@
 //TODO
-//LER O FICHEIRO & validar os dados
-//CRIAR MEMÓRIA PARTILHADA
-//CRIAR PROCESSOS WORKER
-//CRIAR PROCESSOS ALERT WATCHER
-//CRIAR THREADS
+//LER O FICHEIRO & validar os dados - done
+//CRIAR MEMÓRIA PARTILHADA - done
+//CRIAR PROCESSOS WORKER - done
+//CRIAR PROCESSOS ALERT WATCHER - done
+//CRIAR THREADS - done
+
 #include "system_manager.h"
-#include "log.h"
-#include <stdio.h>
+//pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv){
-	log_message("Program starting...\n");
+
+	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
 	if (argc < 2) {
-        fprintf(stderr, "Usage: %s <config-file-path>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <config-file-path> \n", argv[0]);
         return 1;
     }
+	mobile_user_count = 0;
 	strcpy(filename, argv[1]);
 	if(!validate_config(filename)) exit(0);
 	printf("%s read\n", filename);
 	init_prog();
 	free_shared(shm_id);
-	log_message("Program ending...");
+	log_message("5G_AUTH_PLATFORM SIMULATOR CLOSING\n");
 	return 0;
 }
 
 void free_shared(int shm_id){
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
+	log_message("SIMULATOR WAITING FOR LAST TASKS TO FINISH") ;
 }
 
 void init_prog(){
 	//size incomplete
 	int shm_size = sizeof(config_struct) + sizeof(mobile_user_struct);
 	if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 1){
-    	log_message("ERROR IN SHMGET\n");
+    	log_message("ERROR IN SHMGET");
     	exit(1);
   	}
 	if(shmat(shm_id, NULL, 0) == (void*)-1){
-		log_message("ERROR IN SHMAT\n");
+		log_message("ERROR IN SHMAT");
 		exit(0);
 	}
-	log_message("Shared memory allocated.");
+	log_message("SHARED MEMORY IS ALLOCATED");
 	// Create threads
 	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0)
 	{
-		log_message("Cannot create sender_thread\n");
+		log_message("CANNOT CREATE SENDER_THREAD");
 		free_shared(shm_id);
 		exit(1);
 	}
 
 	if (pthread_create(&receiver_thread, NULL, receiver_function, NULL) != 0)
 	{
-		log_message("Cannot create receiver_thread.\n");
+		log_message("CANNOT CREATE RECEIVER_THREAD");
 		free_shared(shm_id);
 		exit(1);
 	}
 
 	if(pthread_join(sender_thread, NULL)!= 0){
-		log_message("Cannot join sender_thread.\n");
+		log_message("CANNOT JOIN SENDER_THREAD");
 		free_shared(shm_id);
 		exit(1);
 	}
 
 	if(pthread_join(receiver_thread, NULL)!= 0){
-		log_message("Cannot join receiveR_thread\n");
+		log_message("CANNOT JOIN RECEIVER_THREAD");
 		free_shared(shm_id);
 		exit(1);
 	}
@@ -70,10 +73,10 @@ void init_prog(){
 }
 
 void auth_request_manager(){
-	log_message("authorization Request Manager process created...\n");
+	log_message("PROCESS AUTHORIZATION_REQUEST_MANAGER CREATED");
 }
 void monitor_engine(){
-	log_message("monitor Engine processs created...\n");
+	log_message("PROCESS MONITOR_ENGINE CREATED");
 } 
 
 void create_proc(){
@@ -83,7 +86,7 @@ void create_proc(){
 		return;
 	}
 	else if(auth_request_manager_pid < 0){
-		log_message("auth_request_manager fork failed");
+		log_message("AUTH_REQUEST_MANAGER FORK FAILED");
 		free_shared(shm_id);
 		exit(1);
 	}
@@ -93,35 +96,34 @@ void create_proc(){
 		return;
 	}
 	else if(monitor_engine_pid < 0){
-		log_message("monitor_engine fork failed");
+		log_message("MONITOR_ENGINE FORK FAILED");
 		free_shared(shm_id);
 		exit(1);
 	}
+
 	// Esperar pela terminação dos processos filho para evitar processos zumbi
     waitpid(auth_request_manager_pid, NULL, 0);
     waitpid(monitor_engine_pid, NULL, 0);
-    log_message("Child processes have terminated.");
+    log_message("WAITING FOR CHILD PROCESSES TO FINISH");
 }
 
 void *sender_function(void *arg){
 	(void)arg;
-	log_message("Sender thread functional... \n");
+	log_message("THREAD SENDER CREATED");
 	return NULL;
 }
 
 void *receiver_function(void *arg){
 	(void)arg;
-	log_message("Receiver thread functional...\n");
+	log_message("THREAD RECEIVER CREATED");
 	return NULL;
 }
 
-
 bool validate_config(char *filename) {
-    FILE *f = fopen(filename, "r");
-    char log_msg[256]; // Define a variável aqui, garantindo que seja grande o suficiente para a mensagem.
+    FILE *f = fopen(filename, "r");// Define a variável aqui, garantindo que seja grande o suficiente para a mensagem.
 
     if (f == NULL) {
-        log_message("Unable to open the config file.");
+        log_message("UNABLE TO OPEN CONFIG FILE");
         return false;
     }
     int aux;
