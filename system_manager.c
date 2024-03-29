@@ -9,7 +9,7 @@
 //pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv){
-
+	system_manager_pid = getpid();
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
 	if (argc < 2) {
         fprintf(stderr, "Usage: %s <config-file-path> \n", argv[0]);
@@ -18,17 +18,17 @@ int main(int argc, char **argv){
 	mobile_user_count = 0;
 	strcpy(filename, argv[1]);
 	if(!validate_config(filename)) exit(0);
-	printf("%s read\n", filename);
+	//printf("%s read\n", filename);
 	init_prog();
+	if(getpid() == system_manager_pid)log_message("SIMULATOR WAITING FOR LAST TASKS TO FINISH");
 	free_shared(shm_id);
-	log_message("5G_AUTH_PLATFORM SIMULATOR CLOSING\n");
+	if(getpid() == system_manager_pid)log_message("5G_AUTH_PLATFORM SIMULATOR CLOSING\n");
 	return 0;
 }
 
 void free_shared(int shm_id){
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
-	log_message("SIMULATOR WAITING FOR LAST TASKS TO FINISH") ;
 }
 
 void init_prog(){

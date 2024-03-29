@@ -65,7 +65,7 @@ config_struct config;
 pthread_t receiver_thread, sender_thread;
 
 //process
-pid_t auth_request_manager_pid, monitor_engine_pid;
+pid_t auth_request_manager_pid, monitor_engine_pid, system_manager_pid;
 
 //mutex log
 pthread_mutex_t log_mutex; // Extern keyword added here
