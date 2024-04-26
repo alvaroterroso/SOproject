@@ -4,13 +4,10 @@
 #ifndef mobile_user
 #define mobile_user
 
-#include "shared_mem.h"
 #include "log.h"
-
+#include "system_manager.h"
 //mutex mobile user count
 pthread_mutex_t usercount_mutex;
-//identifier of message queue
-int mqid_mobile;
 
 pid_t process;
 

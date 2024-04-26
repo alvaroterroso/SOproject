@@ -9,6 +9,17 @@
 #include "backoffice_user.h"
 #include "log.h"
 
+//identifier of message queue
+int mqid;
+
+//struct to message queue
+typedef struct {
+  /* Use the pid as the identifier */
+  long id;
+  /* Notifications about plafond */
+  char *msg;
+} plafond_msg;
+
 bool validate_config(char * filename);
 void init_prog();
 void *sender_function(void *arg);

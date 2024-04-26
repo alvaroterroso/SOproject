@@ -77,9 +77,16 @@ void init_prog(){
   	}
 	if(shmat(shm_id, NULL, 0) == (void*)-1){
 		log_message("ERROR IN SHMAT");
-		exit(0);
+		exit(1);
 	}
 	log_message("SHARED MEMORY IS ALLOCATED");
+
+	mqid = msgget(IPC_PRIVATE,0777);
+	if (mqid == -1) {
+        log_message("ERROR IN MSGGET");
+		exit(1);
+    }
+	log_message("MESSAGE QUEUE IS ALLOCATED");
 
 	// Create processes
 	create_proc();
