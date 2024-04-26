@@ -1,3 +1,6 @@
+//Álvaro Terroso 2021213782
+//Rui Oliveira 2022210616
+
 #ifndef system_manager
 #define system_manager
 
@@ -10,9 +13,11 @@ bool validate_config(char * filename);
 void init_prog();
 void *sender_function(void *arg);
 void *receiver_function(void *arg);
-void free_shared(int shm_id);
+void free_shared();
 void auth_request_manager();
 void monitor_engine();
 void create_proc();
+void signal_handler();
+void create_pipes(char * named);
 
 #endif

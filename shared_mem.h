@@ -21,15 +21,16 @@
 #include <signal.h>
 #include <sys/time.h>
 
-#define PIPENAME_1 "USER_PIPE"
+#define USER_PIPE "USER_PIPE"
 
-#define PIPENAME_2 "BACK_PIPE"
+#define BACK_PIPE "BACK_PIPE"
 
 #define MAX_STRING_SIZE 256
 
 #define FILENAME "log.txt"
 
 typedef struct config_struct{
+	int max_mobile_user;
 	int queue_slot_number;
 	int max_auth_servers;
 	int auth_proc_time; //ms
