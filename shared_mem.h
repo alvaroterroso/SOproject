@@ -22,9 +22,6 @@
 #include <sys/time.h>
 #include <ctype.h>
 
-#define USER_PIPE "USER_PIPE"
-
-#define BACK_PIPE "BACK_PIPE"
 
 #define MAX_STRING_SIZE 256
 

@@ -173,8 +173,9 @@ void *sender_function(void *arg){
 
 void *receiver_function(void *arg){
 	(void)arg;
+	int fd_read;
 	log_message("THREAD RECEIVER CREATED");
-	if ((fd_read= open(USER_PIPE, O_RDWR)) < 0){
+	if ((fd_read= open(USER_PIPE, O_RDONLY)) < 0){
 		log_message("ERROR OPENING PIPE FOR READING!");
 		exit(1);
 	
@@ -186,7 +187,6 @@ void *receiver_function(void *arg){
 		FD_ZERO(&read_set);
 
 		FD_SET(fd_read, &read_set);
-	
 		if(select(fd_read+1,&read_set,NULL,NULL,NULL)>0){
 			if(FD_ISSET(fd_read,&read_set)){
 				char buf[MAX_STRING_SIZE];
@@ -293,10 +293,6 @@ bool validate_config(char* filename) {
     fclose(f);
     return true;
 }
-
-
-
-
 
 void auth_mobile(int id, char type[MAX_STRING_SIZE], int amount){
 	//fazer função que reparte os pedidos pelas respetivas filas
