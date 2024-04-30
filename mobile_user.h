@@ -3,22 +3,13 @@
 
 #ifndef mobile_user
 #define mobile_user
-
+#define MAX_SIZE 256
 #include "log.h"
 #include "system_manager.h"
 //mutex mobile user count
-pthread_mutex_t usercount_mutex;
+//sem_t * sem_usercount;
 
-pid_t process;
-
-//struct to message queue
-typedef struct {
-  /* Use the pid as the identifier */
-  long id;
-  /* Notifications about plafond */
-  char *msg;
-} plafond_msg;
-
+void clear_resources();
 
 
 #endif

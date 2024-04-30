@@ -20,6 +20,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <ctype.h>
 
 #define USER_PIPE "USER_PIPE"
 
@@ -39,6 +40,7 @@ typedef struct config_struct{
 }config_struct;
 
 typedef struct mobile_user_struct{
+	int id; //getpid()
 	int init_plafond;
 	int auth_request_number;
 	int video_interval;
@@ -47,17 +49,33 @@ typedef struct mobile_user_struct{
 	int to_reserve_data;
 }mobile_user_struct;
 
+//a nossa shared memory
+typedef struct users_{
+	int id;
+	int plafond;
+	struct users_ *next;
+}users_;
+
+users_ *users;
+
+
+sem_t *sem_shared; //estipular um maximo de readers ao mesmo tempo
 //mobile_user count
 int mobile_user_count;
 
-//inicializar shared memorym
+//variaveis para as estatisticas	0->total data 	1->auth reqs
+int video[2];
+int music[2];
+int social[2];
+
+//inicializar shared memory
 int shm_id;
 
 //config filename
 char filename[MAX_STRING_SIZE];
 
 //log file
-char log_msg[MAX_STRING_SIZE];
+char log_msg[MAX_STRING_SIZE]; // fazer antes malloc para dar free no fim, so ainda n fiz isso pq ns onde dar o free
 
 //config file
 config_struct config;

@@ -3,7 +3,7 @@
 
 #include "mobile_user.h"
 
-usercount_mutex = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t usercount_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv){
 	if(argc < 7){
@@ -29,27 +29,41 @@ int main(int argc, char **argv){
 	new_mobile_user->social_interval = atoi(argv[5]);
 	new_mobile_user->to_reserve_data = atoi(argv[6]);
 
-	process = getpid();
+	new_mobile_user->id = (int)getpid();
 
-	pthread_mutex_lock(&usercount_mutex);
-	mobile_user_count++;
-	pthread_mutex_unlock(&usercount_mutex);
+	//pthread_mutex_lock(&usercount_mutex);
+	if(mobile_user_count<config.max_mobile_user){
+		mobile_user_count++;
+		snprintf(log_msg, sizeof(log_msg), "Mobile user nº %d data as been saved in mobile_user struct", mobile_user_count);
+		log_message(log_msg);
+		//pthread_mutex_unlock(&usercount_mutex);
+	}
+	//pthread_mutex_unlock(&usercount_mutex);
 
 	snprintf(log_msg, sizeof(log_msg), "Mobile user nº %d data as been saved in mobile_user struct", mobile_user_count);
 	log_message(log_msg);
+	
 
-	
+	//register message
+	snprintf(log_msg, strlen(log_msg), "%d#%d",new_mobile_user->id, new_mobile_user->init_plafond);
+	if((fd_write = open(USER_PIPE, O_WRONLY))<0){
+		log_message("CANNOT OPEN PIPE FOR WRITING");
+		clear_resources();
+		exit(1);
+	}
+	write(fd_write, log_msg, sizeof(log_msg));
+
+
 	/*
-	
 		//send the data through threads to the named pipe here
 	
 	*/
 
-	mqid_mobile = msgget(IPC_PRIVATE,0777);
+	mqid = msgget(IPC_PRIVATE,0777);
 	plafond_msg plafond;
 	while(1){
 		//only receives messages that belongs to this process
-		msgrcv(mqid_mobile,&plafond,sizeof(plafond)-sizeof(long),(long)process,0);
+		msgrcv(mqid,&plafond,sizeof(plafond)-sizeof(long),(long)new_mobile_user->id,0);
 		/*
 		
 		Analyse what to do here.
@@ -61,6 +75,14 @@ int main(int argc, char **argv){
 
 	free(new_mobile_user);
 	return 0;
+
+}
+
+
+void clear_resources(){
+	//pthread_mutex_lock(&usercount_mutex);
+	mobile_user_count--;
+	//pthread_mutex_unlock(&usercount_mutex);
 
 }
 

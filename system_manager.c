@@ -54,7 +54,7 @@ void signal_handler(){
 
 void create_pipes(char * named){
 	unlink(named);
-	if ((mkfifo(named, O_CREAT|O_EXCL|0600)<0) && (errno != EEXIST)){
+	if ((mkfifo(named, O_CREAT|O_EXCL|0777)<0) && (errno != EEXIST)){
     	log_message("CANNOT CREATE NAMED PIPE -> EXITING\n");
     	exit(1);
   	}
@@ -70,12 +70,13 @@ void free_shared(){
 }
 
 void init_prog(){
-	int shm_size = sizeof(config_struct) + sizeof(mobile_user_struct) * config.max_mobile_user;
+	int shm_size = sizeof(config_struct) + sizeof(users_) * config.max_mobile_user;
 	if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 1){
     	log_message("ERROR IN SHMGET");
     	exit(1);
   	}
-	if(shmat(shm_id, NULL, 0) == (void*)-1){
+	users=(users_*)shmat(shm_id, NULL, 0);
+	if(users == (void*)-1){
 		log_message("ERROR IN SHMAT");
 		exit(1);
 	}
@@ -88,10 +89,15 @@ void init_prog(){
     }
 	log_message("MESSAGE QUEUE IS ALLOCATED");
 
+	//criação dos semaforos responsaveis pela shared memory
+	sem_unlink("shared");
+	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	// Create processes
 	create_proc();
 	
 	//pipe creation
+	unlink(USER_PIPE);
+	unlink(BACK_PIPE);
 	create_pipes(USER_PIPE);
 	create_pipes(BACK_PIPE);
 }
@@ -161,12 +167,63 @@ void create_proc(){
 void *sender_function(void *arg){
 	(void)arg;
 	log_message("THREAD SENDER CREATED");
+
 	return NULL;
 }
 
 void *receiver_function(void *arg){
 	(void)arg;
 	log_message("THREAD RECEIVER CREATED");
+	if ((fd_read= open(USER_PIPE, O_RDWR)) < 0){
+		log_message("ERROR OPENING PIPE FOR READING!");
+		exit(1);
+	
+	}
+	log_message("PIPE FOR READING IS OPEN!");
+
+	while(1){
+		fd_set read_set;
+		FD_ZERO(&read_set);
+
+		FD_SET(fd_read, &read_set);
+	
+		if(select(fd_read+1,&read_set,NULL,NULL,NULL)>0){
+			if(FD_ISSET(fd_read,&read_set)){
+				char buf[MAX_STRING_SIZE];
+				int n=0;
+				n=read(fd_read, buf, MAX_STRING_SIZE);
+
+				buf[n]='\0';
+
+				int cont=0;
+				char *part1, *part2, *part3;
+				part1 = strtok(buf, "#");
+				if (part1 != NULL) {
+					cont++;
+					part2 = strtok(NULL, "#");
+				}
+				if (part2 != NULL) {
+					cont++;
+					part3 = strtok(NULL, "#");
+				}
+					
+				if(cont==1){ //verificação dos dados e encaminhar para a respetiva função
+					if(verificaS(part1)==2 && verificaS(part2)==2){
+						addUser(&users,atoi(part1),atoi(part2));
+						log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
+					}else	log_message("MOBILE USER SENT WRONG PARAMETERS.");
+				}else if(cont==2){
+					if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){
+						auth_mobile(atoi(part1),part2,atoi(part3));
+						log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+					}else	log_message("MOBILE USER SENT WRONG PARAMETERS.");
+				}else{
+					log_message("MOBILE USER SENT WRONG PARAMETERS.");
+				}
+				
+			}
+		}
+	}		
 	return NULL;
 }
 
@@ -235,4 +292,12 @@ bool validate_config(char* filename) {
 
     fclose(f);
     return true;
+}
+
+
+
+
+
+void auth_mobile(int id, char type[MAX_STRING_SIZE], int amount){
+	//fazer função que reparte os pedidos pelas respetivas filas
 }

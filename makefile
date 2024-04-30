@@ -1,3 +1,6 @@
+#Álvaro Terroso 2021213782
+#Rui Oliveira 2022210616
+
 CC = gcc
 FLAGS = -Wall -pthread -g
 PROGS = 5g_auth_platform mobile_user backoffice_user
@@ -8,13 +11,13 @@ clean:
 	rm -f *.o *~ $(PROGS)
 
 5g_auth_platform: system_manager.o log.o
-	${CC} ${FLAGS} $^ ${LIBS} -o $@
+	${CC} ${FLAGS} $^ -o $@
 
 mobile_user: mobile_user.o log.o
-	${CC} ${FLAGS} $^ ${LIBS} -o $@
+	${CC} ${FLAGS} $^ -o $@
 
 backoffice_user: backoffice_user.o log.o
-	${CC} ${FLAGS} $^ ${LIBS} -o $@
+	${CC} ${FLAGS} $^ -o $@
 
 %.o: %.c
 	${CC} ${FLAGS} -c $< -o $@

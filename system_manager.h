@@ -11,7 +11,7 @@
 
 //identifier of message queue
 int mqid;
-
+int fd_read, fd_write;//arranjar maneira de por esta variavel -> config.max_mobile_user
 //struct to message queue
 typedef struct {
   /* Use the pid as the identifier */
@@ -30,5 +30,7 @@ void monitor_engine();
 void create_proc();
 void signal_handler();
 void create_pipes(char * named);
+void login_mobile(int id, int plafond);
+void auth_mobile(int id, char type[MAX_STRING_SIZE], int amount);
 
 #endif

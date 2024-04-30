@@ -6,7 +6,10 @@
 
 #include "shared_mem.h"
 
-//Write to log
-int log_message(char* message);
 
-#endif // log
+int log_message(char* message);
+void addUser(users_ **head, int id_, int plaf);
+users_* searchUser(users_ *head, int id_);
+int removeUser(users_ **head, int id_); 
+int verificaS(const char *str);
+#endif
