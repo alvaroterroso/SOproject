@@ -3,7 +3,7 @@
 
 #include "mobile_user.h"
 int fd_write;
-//pthread_mutex_t usercount_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 
 int main(int argc, char **argv){
 	if(argc < 7){
@@ -31,13 +31,6 @@ int main(int argc, char **argv){
 	new_mobile_user->to_reserve_data = atoi(argv[6]);
 
 	new_mobile_user->id = (int)getpid();
-	/*
-	if(mobile_user_count<config.max_mobile_user){
-		mobile_user_count++;
-		snprintf(log_msg, sizeof(log_msg), "Mobile user nº %d data as been saved in mobile_user struct", mobile_user_count);
-		log_message(log_msg);
-	}
-	*/
 
 	//register message
 	snprintf(log_msg, sizeof(log_msg), "%d#%d",new_mobile_user->id, new_mobile_user->init_plafond);
@@ -48,10 +41,19 @@ int main(int argc, char **argv){
 	}
 	write(fd_write, log_msg, sizeof(log_msg));
 
-
+	if (sem_init(mens_pipe, 0, 1) == -1) { // O terceiro argumento é o valor inicial do semáforo
+        log_message("ERRO A CRIAR SEMAFORO NO MOBILE USER.");
+        exit(1);
+    }
 	/*
-		//send the data through threads to the named pipe here
-	
+	int intervalos[3] = {new_mobile_user->video_interval, new_mobile_user->music_interval, new_mobile_user->social_interval};
+	char *tipo[3] = {}
+	for(int i=0; i<3; i++){
+		filhos[i]=fork();
+		if(filhos[i]==0){
+			send_data(intervalos[i], )
+		}
+	}
 	*/
 
 	mqid = msgget(IPC_PRIVATE,0777);
@@ -75,7 +77,9 @@ int main(int argc, char **argv){
 
 
 void clear_resources(){
-	//pthread_mutex_lock(&usercount_mutex);
-	//pthread_mutex_unlock(&usercount_mutex);
+
+}
+
+void send_data(int interval){
 
 }

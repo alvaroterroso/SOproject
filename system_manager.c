@@ -93,8 +93,6 @@ void init_prog(){
 		exit(1);
 	}
 	log_message("SHARED MEMORY IS ALLOCATED");
-	create_pipes(USER_PIPE);
-	create_pipes(BACK_PIPE);
 	create_msq();
 
 	// Create processes
@@ -111,6 +109,8 @@ void init_prog(){
 void auth_request_manager(){
 	log_message("PROCESS AUTHORIZATION_REQUEST_MANAGER CREATED");
 	//create threads
+	create_pipes(USER_PIPE);
+	create_pipes(BACK_PIPE);
 	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0)
 	{
 		log_message("CANNOT CREATE SENDER_THREAD");
