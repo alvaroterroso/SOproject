@@ -22,6 +22,8 @@
 #include <sys/time.h>
 #include <ctype.h>
 
+#define USER_PIPE "USER_PIPE"
+#define BACK_PIPE "BACK_PIPE"
 
 #define MAX_STRING_SIZE 256
 
@@ -52,7 +54,6 @@ typedef struct users_{
 	int plafond;
 	struct users_ *next;
 }users_;
-
 
 typedef struct shm{
 	users_ *users;
@@ -91,4 +92,3 @@ pid_t auth_request_manager_pid, monitor_engine_pid, system_manager_pid;
 pthread_mutex_t log_mutex; // Extern keyword added here
 
 #endif
-

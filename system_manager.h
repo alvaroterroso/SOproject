@@ -9,8 +9,6 @@
 #include "backoffice_user.h"
 #include "log.h"
 
-#define USER_PIPE "USER_PIPE"
-#define BACK_PIPE "BACK_PIPE"
 //identifier of message queue
 int mqid;
 //arranjar maneira de por esta variavel -> config.max_mobile_user
@@ -21,6 +19,7 @@ typedef struct {
   /* Notifications about plafond */
   char *msg;
 } plafond_msg;
+
 
 bool validate_config(char * filename);
 void init_prog();
@@ -34,5 +33,6 @@ void signal_handler();
 void create_pipes(char * named);
 void login_mobile(int id, int plafond);
 void auth_mobile(int id, char type[MAX_STRING_SIZE], int amount);
+void create_msq();
 
 #endif

@@ -11,5 +11,4 @@
 
 void clear_resources();
 
-
 #endif

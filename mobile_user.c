@@ -49,7 +49,6 @@ int main(int argc, char **argv){
 	write(fd_write, log_msg, sizeof(log_msg));
 
 
-
 	/*
 		//send the data through threads to the named pipe here
 	
@@ -77,8 +76,6 @@ int main(int argc, char **argv){
 
 void clear_resources(){
 	//pthread_mutex_lock(&usercount_mutex);
-	mobile_user_count--;
 	//pthread_mutex_unlock(&usercount_mutex);
 
 }
-

@@ -6,5 +6,8 @@
 
 #include "shared_mem.h"
 #include "log.h"
+#define data "1#data_stats"
+#define reset "1#reset"
 
+char input[100];
 #endif //BACKOFFICE_USER_H
