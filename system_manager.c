@@ -3,12 +3,10 @@
 
 /*
 TODO:
-PIPES -> CREATED, BUT NOT OPPENED
-THREADS -> CREATED, BUT NOT FUNCTION
-
-FIXES:
-PROCESSES CREATED ON RIGHT PLACE
-SIGNAL -> HANDLES CTRL-C, AND IGNORES WHILE SETUP
+->CRIAR FILAS DE VIDEO E A OTHERS, E ENVIAR OS DADOS DO MOBILE USER PARA A FILA CORRESPONDENTE
+->METODO PARA AVISAR SE O MOBILE USER  FOI OU NAO REGISTADO
+VER SE ESTÁ CERTO:
+->VER SE O MOBILE USER CONSEGUE DAR LOGIN 
 
 */
 
@@ -30,7 +28,7 @@ int main(int argc, char **argv){
         fprintf(stderr, "Usage: %s <config-file-path> \n", argv[0]);
         return 1;
     }
-	mobile_user_count = 0;
+
 	strcpy(filename, argv[1]);
 	if(!validate_config(filename)) exit(0);
 
@@ -70,13 +68,13 @@ void free_shared(){
 }
 
 void init_prog(){
-	int shm_size = sizeof(config_struct) + sizeof(users_) * config.max_mobile_user;
+	int shm_size = sizeof(shm) + sizeof(users_)* config.max_mobile_user;
 	if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 1){
     	log_message("ERROR IN SHMGET");
     	exit(1);
   	}
-	users=(users_*)shmat(shm_id, NULL, 0);
-	if(users == (void*)-1){
+	shared = (shm *)shmat(shm_id, NULL, 0);
+	if(shared == (void*)-1){
 		log_message("ERROR IN SHMAT");
 		exit(1);
 	}
@@ -91,7 +89,10 @@ void init_prog(){
 
 	//criação dos semaforos responsaveis pela shared memory
 	sem_unlink("shared");
+	sem_unlink("counter");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
+	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
+
 	// Create processes
 	create_proc();
 	
@@ -209,14 +210,26 @@ void *receiver_function(void *arg){
 					
 				if(cont==1){ //verificação dos dados e encaminhar para a respetiva função
 					if(verificaS(part1)==2 && verificaS(part2)==2){
-						addUser(&users,atoi(part1),atoi(part2));
-						log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
+						sem_wait(sem_userscount);
+						if(shared->mobile_users<config.max_mobile_user){
+							++shared->mobile_users;
+							sem_post(sem_userscount);
+							addUser(&shared->users,atoi(part1),atoi(part2));
+							log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
+						}else{
+							sem_post(sem_userscount);
+							//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo
+							log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
+						}
+
 					}else	log_message("MOBILE USER SENT WRONG PARAMETERS.");
+
 				}else if(cont==2){
 					if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){
 						auth_mobile(atoi(part1),part2,atoi(part3));
 						log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
 					}else	log_message("MOBILE USER SENT WRONG PARAMETERS.");
+
 				}else{
 					log_message("MOBILE USER SENT WRONG PARAMETERS.");
 				}

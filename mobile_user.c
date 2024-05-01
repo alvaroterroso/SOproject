@@ -31,19 +31,13 @@ int main(int argc, char **argv){
 	new_mobile_user->to_reserve_data = atoi(argv[6]);
 
 	new_mobile_user->id = (int)getpid();
-
-	//pthread_mutex_lock(&usercount_mutex);
+	/*
 	if(mobile_user_count<config.max_mobile_user){
 		mobile_user_count++;
 		snprintf(log_msg, sizeof(log_msg), "Mobile user nº %d data as been saved in mobile_user struct", mobile_user_count);
 		log_message(log_msg);
-		//pthread_mutex_unlock(&usercount_mutex);
 	}
-	//pthread_mutex_unlock(&usercount_mutex);
-
-	snprintf(log_msg, sizeof(log_msg), "Mobile user nº %d data as been saved in mobile_user struct", mobile_user_count);
-	log_message(log_msg);
-	
+	*/
 
 	//register message
 	snprintf(log_msg, sizeof(log_msg), "%d#%d",new_mobile_user->id, new_mobile_user->init_plafond);

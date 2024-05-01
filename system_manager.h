@@ -13,7 +13,7 @@
 #define BACK_PIPE "BACK_PIPE"
 //identifier of message queue
 int mqid;
-int fd_read;//arranjar maneira de por esta variavel -> config.max_mobile_user
+//arranjar maneira de por esta variavel -> config.max_mobile_user
 //struct to message queue
 typedef struct {
   /* Use the pid as the identifier */

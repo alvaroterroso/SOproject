@@ -53,12 +53,16 @@ typedef struct users_{
 	struct users_ *next;
 }users_;
 
-users_ *users;
 
+typedef struct shm{
+	users_ *users;
+	int mobile_users;
+}shm;
 
-sem_t *sem_shared; //estipular um maximo de readers ao mesmo tempo
-//mobile_user count
-int mobile_user_count;
+shm *shared; 
+
+sem_t *sem_shared; //semaforo para lidar com a fila da shared memory
+sem_t *sem_userscount; //semaforo para lidar com o usercount da shared memory
 
 //variaveis para as estatisticas	0->total data 	1->auth reqs
 int video[2];
