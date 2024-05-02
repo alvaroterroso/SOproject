@@ -7,8 +7,12 @@
 #include "log.h"
 #include "system_manager.h"
 //mutex mobile user count
-//sem_t * sem_usercount;
-
+mobile_user_struct new_mobile_user;
+sem_t * mens_pipe, * request_number, *sem_full;
+pid_t filhos[3];
 void clear_resources();
+void send_data(int interval, char *tipo);
 
 #endif
+
+

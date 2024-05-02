@@ -81,7 +81,6 @@ void create_msq(){
 }
 
 void init_prog(){
-	//pipe creation
 	int shm_size = sizeof(shm) + sizeof(users_)* config.max_mobile_user;
 	if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 1){
     	log_message("ERROR IN SHMGET");
@@ -111,6 +110,7 @@ void auth_request_manager(){
 	//create threads
 	create_pipes(USER_PIPE);
 	create_pipes(BACK_PIPE);
+
 	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0)
 	{
 		log_message("CANNOT CREATE SENDER_THREAD");
@@ -202,13 +202,14 @@ void *receiver_function(void *arg){
 		FD_SET(fd_read_back, &read_set);
 		if(select(fd_read_user+1,&read_set,NULL,NULL,NULL)>0){
 			if(FD_ISSET(fd_read_user,&read_set)){
+				log_message("A LER O QUE FOI ENVIADO");
 				char buf[MAX_STRING_SIZE];
 				int n=0;
 				n=read(fd_read_user, buf, MAX_STRING_SIZE);
 				printf("%s", buf);
 
 				buf[n]='\0';
-
+				printf("%s\n",buf);
 				int cont=0;
 				char *part1, *part2, *part3;
 				part1 = strtok(buf, "#");

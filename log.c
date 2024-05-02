@@ -5,6 +5,7 @@
 #include "shared_mem.h"
 #include <time.h>
 
+
 // Function to log messages
 int log_message(char* message) {
     time_t rawtime;
