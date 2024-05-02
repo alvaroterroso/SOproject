@@ -188,12 +188,13 @@ void *receiver_function(void *arg){
 	}
 	log_message("USER_PIPE FOR READING IS OPEN!");
 
-	if ((fd_read_back= open(BACK_PIPE, O_RDONLY)) < 0){
+	/*if ((fd_read_back= open(BACK_PIPE, O_RDONLY)) < 0){
 		log_message("ERROR OPENING BACK_PIPE FOR READING!");
 		exit(1);
 	}
 	log_message("BACK_PIPE FOR READING IS OPEN!");
-
+	*/
+	printf("VOU COMEÇAR A LER: A ENTRAR NO WHILE\n");
 	while(1){
 		fd_set read_set;
 		FD_ZERO(&read_set);
@@ -206,10 +207,9 @@ void *receiver_function(void *arg){
 				char buf[MAX_STRING_SIZE];
 				int n=0;
 				n=read(fd_read_user, buf, MAX_STRING_SIZE);
-				printf("%s", buf);
+				printf("%s\n", buf);
 
 				buf[n]='\0';
-				printf("%s\n",buf);
 				int cont=0;
 				char *part1, *part2, *part3;
 				part1 = strtok(buf, "#");

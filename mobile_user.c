@@ -32,31 +32,25 @@ int main(int argc, char **argv){
 	new_mobile_user.id = (int)getpid();
 
 	//register message
-	printf("ola1\n");
 	snprintf(log_msg, sizeof(log_msg), "%d#%d",new_mobile_user.id, new_mobile_user.init_plafond);
+	printf("mensagem mobile: %s\n",log_msg);
 	if((fd_write = open(USER_PIPE, O_WRONLY))<0){
 		log_message("CANNOT OPEN PIPE FOR WRITING");
 		clear_resources();
 		exit(1);
 	}
-	printf("ola2\n");
 	write(fd_write, log_msg, sizeof(log_msg));
-	printf("ola3\n");
 	log_message("MENSAGEM ESCRITA");
-	
-	if (sem_init(mens_pipe, 0, 1) == -1) {
-        log_message("ERRO A CRIAR SEMAFORO NO MOBILE USER.");
-        exit(1);
-    }
-	if (sem_init(request_number, 0, 1) == -1) {
-        log_message("ERRO A CRIAR SEMAFORO DE CONTADOR DE USERS.");
-        exit(1);
-    }
-	if (sem_init(sem_full, 0, 1) == -1) {
-        log_message("ERRO A CRIAR SEMAFORO DE CONTADOR DE USERS.");
-        exit(1);
-    }
 
+	sem_unlink("escrita");
+	mens_pipe = sem_open("escrita", O_CREAT|O_EXCL, 0777,1);
+
+	sem_unlink("requests");
+	request_number = sem_open("requests", O_CREAT|O_EXCL, 0777,1);
+
+	sem_unlink("full");
+	sem_full = sem_open("full", O_CREAT|O_EXCL, 0777,1);
+	
 	int intervalos[3] = {new_mobile_user.video_interval, new_mobile_user.music_interval, new_mobile_user.social_interval};
 	char *tipo[3] = {"VIDEO", "MUSIC", "SOCIAL"};
 	for(int i=0; i<3; i++){
@@ -66,7 +60,6 @@ int main(int argc, char **argv){
 			exit(0);
 		}
 	}
-	
 
 	mqid = msgget(IPC_PRIVATE,0777);
 	plafond_msg plafond;
@@ -82,7 +75,6 @@ int main(int argc, char **argv){
 		
 		*/
 	}
-
 
 	return 0;
 
