@@ -85,8 +85,9 @@ void clear_resources(){
 
 }
 
-void send_data(int interval, char *tipo){
+void send_data(int interval, char *tipo){//VER SE POSSO USAR UMA SHARED VARIABLE PARA IR DECREMENTANDO O NUMERO DE REQUESTS
 	sem_wait(request_number);
+
 	while(new_mobile_user.auth_request_number>0){
 		sem_wait(sem_full);
 		if(full!=1){
@@ -96,10 +97,14 @@ void send_data(int interval, char *tipo){
 			snprintf(log_msg, sizeof(log_msg), "%d#%s#%d",new_mobile_user.id, tipo, new_mobile_user.to_reserve_data);
 			sem_wait(mens_pipe);
 			write(fd_write, log_msg, sizeof(log_msg));
+			printf("A enviar mais mensagens\n");
 			sem_post(mens_pipe);
 			sleep(interval);
+		}else{
+			sem_post(sem_full);
+			break;
 		}
-		sem_post(sem_full);
 	}
+	printf("nao deu para enviar mais nada\n");
 	sem_post(request_number);
 }

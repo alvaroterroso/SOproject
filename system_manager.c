@@ -17,7 +17,8 @@ int fd_read_back;
 
 int main(int argc, char **argv){
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
-
+	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
+	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	//ignore signal while inittilazing 
 
 	//signal(SIGINT, SIG_IGN);
@@ -93,16 +94,12 @@ void init_prog(){
 	}
 	log_message("SHARED MEMORY IS ALLOCATED");
 	create_msq();
-
 	// Create processes
 	create_proc();
 
 	//criação dos semaforos responsaveis pela shared memory
 	sem_unlink("shared");
 	sem_unlink("counter");
-	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
-	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
-
 }
 
 void auth_request_manager(){
@@ -214,47 +211,39 @@ void *receiver_function(void *arg){
 				char *part1, *part2, *part3;
 				part1 = strtok(buf, "#");
 				if (part1 != NULL) {
-					cont++;
 					part2 = strtok(NULL, "#");
 				}
 				if (part2 != NULL) {
-					cont++;
 					part3 = strtok(NULL, "#");
 				}
-					
-				if(cont==1){ //verificação dos dados e encaminhar para a respetiva função
-					if(verificaS(part1)==2 && verificaS(part2)==2){
-						sem_wait(sem_userscount);
-						if(shared->mobile_users<config.max_mobile_user){
-							++shared->mobile_users;
-							sem_post(sem_userscount);
-							addUser(&shared->users,atoi(part1),atoi(part2));
-							log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
-						}else{
-							sem_post(sem_userscount);
-							//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo
-							log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
-						}
-
-					}else	log_message("MOBILE USER SENT WRONG PARAMETERS.");
-
-				}else if(cont==2){
-					if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){
-						auth_mobile(atoi(part1),part2,atoi(part3));
-						log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-					}else	log_message("MOBILE USER SENT WRONG PARAMETERS.");
-
+				printf("part1 -> %s\n part2-> %s\n",part1,part2);
+				printf("print da funçãoi part1: %d\nprint da funçãoi part2: %d\ncount:%d\n",verificaS(part1),verificaS(part2),cont);
+				if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //verificação dos dados e encaminhar para a respetiva função
+					sem_wait(sem_userscount);
+					if(shared->mobile_users<config.max_mobile_user){
+						++shared->mobile_users;
+						sem_post(sem_userscount);
+						addUser(&shared->users,atoi(part1),atoi(part2));
+						log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
+					}else{
+						sem_post(sem_userscount);
+						//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo
+						log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
+					}
+				}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){
+					auth_mobile(atoi(part1),part2,atoi(part3));
+					log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
 				}else{
 					log_message("MOBILE USER SENT WRONG PARAMETERS.");
 				}
 				
 			}
-			if(FD_ISSET(fd_read_back,&read_set)){
+			/*if(FD_ISSET(fd_read_back,&read_set)){
 				char buf[MAX_STRING_SIZE];
 				int n=0;
 				n=read(fd_read_back, buf, MAX_STRING_SIZE);
 				printf("%s\n", buf);
-			}
+			}*/
 		}
 	}		
 	return NULL;
