@@ -18,15 +18,15 @@ int main(int argc, char **argv){
 
 	log_message("PIPE FOR READING IS OPEN!");
 	
-	//while para aceitar as coisas 
+	//while para aceitar as coisas
 	while(1){
 		scanf("%s", input);
 		if(strcmp(input, data) == 0){
 			printf("Requesting statistics...\n");
-			write(fd_write, input, sizeof(input));
+			write(fd_write, input, sizeof(input)); //write to pipe
 		}else if(strcmp(input, reset) == 0){
 			printf("Reseting...\n");
-			write(fd_write, input, sizeof(input));
+			write(fd_write, input, sizeof(input)); //write to pipe
 		}else{
 			printf("Command not accepeted! Usage: <1#data_stats> or <1#reset>\n");
 		}

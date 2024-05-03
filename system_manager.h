@@ -20,6 +20,7 @@ typedef struct {
   char *msg;
 } plafond_msg;
 
+int fd_read_user,fd_read_back;
 
 bool validate_config(char * filename);
 void init_prog();
@@ -34,5 +35,8 @@ void create_pipes(char * named);
 void login_mobile(int id, int plafond);
 void auth_mobile(int id, char type[MAX_STRING_SIZE], int amount);
 void create_msq();
+void create_unnamed_pipes(int pipes[][2]);
+void create_autho_engines(int pipes[][2]);
+void read_from_unnamed(int pipes[2], int i);
 
 #endif

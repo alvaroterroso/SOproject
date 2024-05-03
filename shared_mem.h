@@ -22,8 +22,8 @@
 #include <sys/time.h>
 #include <ctype.h>
 
-#define USER_PIPE "USER_PIPE"
-#define BACK_PIPE "BACK_PIPE"
+#define USER_PIPE "/tmp/USER_PIPE"
+#define BACK_PIPE "/tmp/BACK_PIPE"
 
 #define MAX_STRING_SIZE 256
 
@@ -57,6 +57,7 @@ typedef struct users_{
 
 typedef struct shm{
 	users_ *users;
+	int * read_count_shared; //criar semáforo
 	int mobile_users;
 }shm;
 
@@ -64,6 +65,7 @@ shm *shared;
 
 sem_t *sem_shared; //semaforo para lidar com a fila da shared memory
 sem_t *sem_userscount; //semaforo para lidar com o usercount da shared memory
+sem_t *sem_read_count; //semaforo para lidar com o read_count da shared memory
 
 //variaveis para as estatisticas	0->total data 	1->auth reqs
 int video[2];
@@ -90,5 +92,8 @@ pid_t auth_request_manager_pid, monitor_engine_pid, system_manager_pid;
 
 //mutex log
 pthread_mutex_t log_mutex; // Extern keyword added here
+
+//criaç
+pid_t *autho_engines_pid;
 
 #endif

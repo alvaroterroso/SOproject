@@ -12,18 +12,19 @@ VER SE ESTÁ CERTO:
 
 #include "system_manager.h"
 
-int fd_read_user;
-int fd_read_back;
 
 int main(int argc, char **argv){
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
+	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
 	//ignore signal while inittilazing 
 
-	//signal(SIGINT, SIG_IGN);
-  	//signal(SIGTSTP, SIG_IGN);
-  	//signal(SIGUSR1, SIG_IGN);
+	/*
+	signal(SIGINT, SIG_IGN);
+	signal(SIGTSTP, SIG_IGN);
+	signal(SIGUSR1, SIG_IGN);
+ 	*/
 
 	system_manager_pid = getpid();
 
@@ -36,13 +37,17 @@ int main(int argc, char **argv){
 	strcpy(filename, argv[1]);
 	if(!validate_config(filename)) exit(0);
 
+	int pipes[config.max_auth_servers][2];// [0,0,0,0,0,0,0,0] -> [1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0] -> [0,1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0,0]
+	int read_count[config.max_auth_servers];
+	create_unnamed_pipes(pipes);
 	init_prog();
 
 	signal(SIGINT, signal_handler);//HANDLE CTRL-C
 
-
-	if(getpid() == system_manager_pid)log_message("SIMULATOR WAITING FOR LAST TASKS TO FINISH");
-	free_shared();
+	if(getpid() == system_manager_pid){
+		log_message("SIMULATOR WAITING FOR LAST TASKS TO FINISH");
+		free_shared();
+	}
 	if(getpid() == system_manager_pid)log_message("5G_AUTH_PLATFORM SIMULATOR CLOSING\n"); //last message
 	pthread_mutex_destroy(&log_mutex);
 	return 0;
@@ -56,7 +61,7 @@ void signal_handler(){
 
 void create_pipes(char * named){
 	unlink(named);
-	if ((mkfifo(named, O_CREAT | O_EXCL | 0600)<0) && (errno != EEXIST)){
+	if ((mkfifo(named, O_CREAT | O_EXCL | 0700)<0) && (errno != EEXIST)){
     	log_message("CANNOT CREATE NAMED PIPE -> EXITING\n");
     	exit(1);
   	}
@@ -65,11 +70,12 @@ void create_pipes(char * named){
 }
 
 void free_shared(){
-	unlink(BACK_PIPE);
-	unlink(USER_PIPE);
+	printf("in\n");
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
 	msgctl(mqid, IPC_RMID, 0); //DONE
+	unlink(BACK_PIPE);
+	unlink(USER_PIPE);
 }
 
 void create_msq(){
@@ -93,6 +99,16 @@ void init_prog(){
 		exit(1);
 	}
 	log_message("SHARED MEMORY IS ALLOCATED");
+
+	//init count
+	sem_wait(sem_read_count);
+	for(int i = 0; i < config.max_auth_servers; i++){
+		shared->read_count_shared[i] = 0;
+	}
+	sem_post(sem_read_count);
+
+	create_pipes(USER_PIPE);
+	create_pipes(BACK_PIPE);
 	create_msq();
 	// Create processes
 	create_proc();
@@ -105,8 +121,6 @@ void init_prog(){
 void auth_request_manager(){
 	log_message("PROCESS AUTHORIZATION_REQUEST_MANAGER CREATED");
 	//create threads
-	create_pipes(USER_PIPE);
-	create_pipes(BACK_PIPE);
 
 	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0)
 	{
@@ -121,7 +135,7 @@ void auth_request_manager(){
 		free_shared();
 		exit(1);
 	}
-	 
+
 	if(pthread_join(receiver_thread, NULL)!= 0){
 		log_message("CANNOT JOIN RECEIVER_THREAD");
 		free_shared();
@@ -167,30 +181,66 @@ void create_proc(){
 
 }
 
+void create_unnamed_pipes(int pipes[][2]){
+	for (int i = 0; i < config.max_auth_servers; i++) {
+		if (pipe(pipes[i]) == -1) {
+			log_message("CANNOT CREATE UNNAMED PIPE -> EXITING\n");
+			exit(1);
+		}
+	}
+}
+
+void create_autho_engines(int pipes[][2]){
+	log_message("AUTHORIZATION_ENGINES PROCESSES CREATED");
+	autho_engines_pid = (pid_t*) malloc(config.max_auth_servers * sizeof(pid_t));
+	for(int i = 0; i < config.max_auth_servers; i++){
+		autho_engines_pid[i] = fork();
+		if(autho_engines_pid[i] == 0){
+			read_from_unnamed(pipes[i], i);
+			exit(0);
+		}
+	}
+}
+
+void read_from_unnamed(int pipes[2], int i){
+	close(pipes[1]);
+	if(read(pipes[0], ) > 0){
+		sem_wait(sem_read_count);
+		shared->read_count_shared[i] = 1;
+		sem_post(sem_read_count);
+
+	}
+	sem_wait(sem_read_count);
+	shared->read_count_shared[i] = 0;
+	sem_post(sem_read_count);
+}
+
 void *sender_function(void *arg){
 	(void)arg;
 	log_message("THREAD SENDER CREATED");
-
+	printf("sender function created\n");
 	return NULL;
 }
 
 void *receiver_function(void *arg){
 	(void)arg;
-
 	log_message("THREAD RECEIVER CREATED");
 
-	if ((fd_read_user= open(USER_PIPE, O_RDONLY)) < 0){
+	if ((fd_read_user= open(USER_PIPE, O_RDONLY | O_NONBLOCK)) < 0){ //opening user for reading
+		printf("%d\n", errno);
 		log_message("ERROR OPENING USER_PIPE FOR READING!");
+		free_shared();
 		exit(1);
 	}
 	log_message("USER_PIPE FOR READING IS OPEN!");
 
-	/*if ((fd_read_back= open(BACK_PIPE, O_RDONLY)) < 0){
+	if ((fd_read_back= open(BACK_PIPE, O_RDONLY| O_NONBLOCK)) < 0){//opening user for reading
 		log_message("ERROR OPENING BACK_PIPE FOR READING!");
+		free_shared();
 		exit(1);
 	}
 	log_message("BACK_PIPE FOR READING IS OPEN!");
-	*/
+
 	printf("VOU COMEÇAR A LER: A ENTRAR NO WHILE\n");
 	while(1){
 		fd_set read_set;
@@ -198,7 +248,8 @@ void *receiver_function(void *arg){
 
 		FD_SET(fd_read_user, &read_set);
 		FD_SET(fd_read_back, &read_set);
-		if(select(fd_read_user+1,&read_set,NULL,NULL,NULL)>0){
+		int nfds = (fd_read_user > fd_read_back ? fd_read_user : fd_read_back) + 1;
+		if(select(nfds,&read_set,NULL,NULL,NULL)>0){
 			if(FD_ISSET(fd_read_user,&read_set)){
 				log_message("A LER O QUE FOI ENVIADO");
 				char buf[MAX_STRING_SIZE];
@@ -238,12 +289,13 @@ void *receiver_function(void *arg){
 				}
 				
 			}
-			/*if(FD_ISSET(fd_read_back,&read_set)){
-				char buf[MAX_STRING_SIZE];
-				int n=0;
-				n=read(fd_read_back, buf, MAX_STRING_SIZE);
-				printf("%s\n", buf);
-			}*/
+			if(FD_ISSET(fd_read_back,&read_set)){
+				char buf[MAX_STRING_SIZE] = "\0";
+				int n=read(fd_read_back, buf, MAX_STRING_SIZE);
+				if(n > 0){
+					printf("%s\n", buf);
+				}
+			}
 		}
 	}		
 	return NULL;

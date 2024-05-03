@@ -24,7 +24,7 @@ backoffice_user: backoffice_user.o log.o
 
 ####################
 
-system_manager.o: system_manager.c system_manager.h shared_mem.h log.h
+system_manager.o: system_manager.c system_manager.h shared_mem.h log.h mobile_user.h backoffice_user.h
 log.o: log.c log.h shared_mem.h
 mobile_user.o: mobile_user.c mobile_user.h shared_mem.h log.h
-backoffice_user.o: backoffice_user.c backoffice_user.h shared_mem.h log.h
+backoffice_user.o: backoffice_user.c backoffice_user.h shared_mem.h log.h system_manager.h
