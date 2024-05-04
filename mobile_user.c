@@ -53,14 +53,22 @@ int main(int argc, char **argv){
 	
 	int intervalos[3] = {new_mobile_user.video_interval, new_mobile_user.music_interval, new_mobile_user.social_interval};
 	char *tipo[3] = {"VIDEO", "MUSIC", "SOCIAL"};
+
 	for(int i=0; i<3; i++){
-		filhos[i]=fork();
-		if(filhos[i]==0){
-			send_data(intervalos[i], tipo[i]);
-			exit(0);
+		ThreadArg *thread = malloc(sizeof(ThreadArg));  // Alocação de memória
+        if (thread == NULL) {
+            perror("Failed to allocate memory for thread arguments");
+            exit(1);
+        }
+        thread->interval = intervalos[i];
+        thread->tipo = tipo[i];
+		if (pthread_create(&worker[i], NULL, send_data, thread) != 0){
+			log_message("CANNOT CREATE WORKER THREAD");
+			exit(1);
 		}
 	}
-
+	//por aqui um while que espera a variavel de condição mudar, ou seja, que tenha a certeza que o login foi efetuado
+	// a variavel a verificar é =1 para dizer que o login foi bem feito e =2 se for rejeitado
 	mqid = msgget(IPC_PRIVATE,0777);
 	plafond_msg plafond;
 	while(1){
@@ -75,6 +83,9 @@ int main(int argc, char **argv){
 		
 		*/
 	}
+	for(int i=0; i<3; i++){//nao deve ser aqui o sitio mas para ja ta
+		pthread_join(worker[i],NULL);
+	}
 
 	return 0;
 
@@ -85,7 +96,8 @@ void clear_resources(){
 
 }
 
-void send_data(int interval, char *tipo){//VER SE POSSO USAR UMA SHARED VARIABLE PARA IR DECREMENTANDO O NUMERO DE REQUESTS
+void *send_data(void* arg){//VER SE POSSO USAR UMA SHARED VARIABLE PARA IR DECREMENTANDO O NUMERO DE REQUESTS
+ 	ThreadArg *thread = (ThreadArg*) arg;
 	sem_wait(request_number);
 
 	while(new_mobile_user.auth_request_number>0){
@@ -94,17 +106,16 @@ void send_data(int interval, char *tipo){//VER SE POSSO USAR UMA SHARED VARIABLE
 			sem_post(sem_full);
 			--new_mobile_user.auth_request_number;
 			sem_post(request_number);
-			snprintf(log_msg, sizeof(log_msg), "%d#%s#%d",new_mobile_user.id, tipo, new_mobile_user.to_reserve_data);
+			snprintf(log_msg, sizeof(log_msg), "%d#%s#%d",new_mobile_user.id, thread->tipo, new_mobile_user.to_reserve_data);
 			sem_wait(mens_pipe);
 			write(fd_write, log_msg, sizeof(log_msg));
-			printf("A enviar mais mensagens\n");
 			sem_post(mens_pipe);
-			sleep(interval);
+			sleep(thread->interval);
 		}else{
 			sem_post(sem_full);
 			break;
 		}
 	}
-	printf("nao deu para enviar mais nada\n");
 	sem_post(request_number);
+	return NULL;
 }

@@ -9,9 +9,14 @@
 //mutex mobile user count
 mobile_user_struct new_mobile_user;
 sem_t * mens_pipe, * request_number, *sem_full;
-pid_t filhos[3];
+pthread_t worker[3];
 void clear_resources();
-void send_data(int interval, char *tipo);
+void *send_data(void* arg);
+
+typedef struct {
+    int interval;
+    char *tipo;
+} ThreadArg;
 
 #endif
 

@@ -22,6 +22,8 @@ typedef struct {
 
 int fd_read_user,fd_read_back;
 
+int **pipes;
+
 bool validate_config(char * filename);
 void init_prog();
 void *sender_function(void *arg);
@@ -35,8 +37,9 @@ void create_pipes(char * named);
 void login_mobile(int id, int plafond);
 void auth_mobile(int id, char type[MAX_STRING_SIZE], int amount);
 void create_msq();
-void create_unnamed_pipes(int pipes[][2]);
-void create_autho_engines(int pipes[][2]);
+void create_unnamed_pipes();
+void create_autho_engines();
 void read_from_unnamed(int pipes[2], int i);
+void manage_auth(char *buf);
 
 #endif

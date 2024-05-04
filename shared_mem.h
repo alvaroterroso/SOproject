@@ -29,6 +29,14 @@
 
 #define FILENAME "log.txt"
 
+//A FAZER AMANHA
+//1-> IMPLEMETNRA AS FUNÇOES DE INSERIR, REMOVER, VER SE ESTÁ VAZIA 				X
+//2-> IMPLEMENTAR ESSAS FUNÇÕES NA RECEIVER THREAD									X
+//3-> NA FUNÇÃO SENDER, FAZER O ALGORITMO DE DAR A PRIORIDADE A VIDEO QUEUE        	Falta implementar as variaveis de condição
+//4-> GARANTIR QUE A SENDER ESTÁ A COMUNICAR BEM COM OS UNNAMED PIPES
+//5-> SEMPRE QUE RETIRARMOS PLAFONS, VER QUANTO FALTA PARA ESGOTAR, OU SE JA ESGOTOU, PARA DEPOIS ENVIAR UMA MQ
+
+
 typedef struct config_struct{
 	int max_mobile_user;
 	int queue_slot_number;
@@ -56,16 +64,35 @@ typedef struct users_{
 }users_;
 
 typedef struct shm{
-	users_ *users;
-	int * read_count_shared; //criar semáforo
-	int mobile_users;
+	users_ *users;		     //lista dos mobile users criados
+	int * read_count_shared; //array dos unnamed pipes disponiveis
+	int mobile_users;		 //numero de mobile users registados
 }shm;
+
+sem_t *sem_plafond; // semaforo para lidar com a a variavel plafond dos user
 
 shm *shared; 
 
 sem_t *sem_shared; //semaforo para lidar com a fila da shared memory
 sem_t *sem_userscount; //semaforo para lidar com o usercount da shared memory
 sem_t *sem_read_count; //semaforo para lidar com o read_count da shared memory
+
+sem_t *sem_controlar; //semaforo que só deixa a sender verificar se ha mensagens para ler ( só desbloqueia quando alguem envia para a fila)
+
+typedef struct queue{
+	char message[MAX_STRING_SIZE];
+	struct queue *next;
+}queue;
+
+queue *q_video;
+queue *q_other;
+
+extern pthread_mutex_t mut_video;
+extern pthread_mutex_t mut_other;
+
+
+
+int run;
 
 //variaveis para as estatisticas	0->total data 	1->auth reqs
 int video[2];

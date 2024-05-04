@@ -12,12 +12,19 @@ VER SE ESTÁ CERTO:
 
 #include "system_manager.h"
 
+pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
+pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 
 int main(int argc, char **argv){
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
+	//dar unlink antes tbm
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
+	sem_plafond = sem_open("plafond",O_CREAT|O_EXCL, 0777,1);
+	sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
+
+	run = 1;
 	//ignore signal while inittilazing 
 
 	/*
@@ -37,9 +44,9 @@ int main(int argc, char **argv){
 	strcpy(filename, argv[1]);
 	if(!validate_config(filename)) exit(0);
 
-	int pipes[config.max_auth_servers][2];// [0,0,0,0,0,0,0,0] -> [1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0] -> [0,1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0,0]
-	int read_count[config.max_auth_servers];
-	create_unnamed_pipes(pipes);
+	//int pipes[config.max_auth_servers][2];// [0,0,0,0,0,0,0,0] -> [1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0] -> [0,1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0,0]
+	//ESTA LINHA NAO É PRECISA PORQUE DECLAREI NO.H E NO CREATE UNNAMED EU JA FAÇO ISSO DIREITO
+	create_unnamed_pipes();
 	init_prog();
 
 	signal(SIGINT, signal_handler);//HANDLE CTRL-C
@@ -70,7 +77,21 @@ void create_pipes(char * named){
 }
 
 void free_shared(){
-	printf("in\n");
+	run=0;
+	sem_destroy(sem_shared);
+	sem_destroy(sem_userscount);
+	sem_destroy(sem_read_count);
+	sem_destroy(sem_plafond);
+	sem_destroy(sem_controlar);
+	pthread_mutex_destroy(&mut_video);
+	pthread_mutex_destroy(&mut_other);
+	unlink("shared");
+	unlink("counter");
+	unlink("read_count");
+	unlink("plafond");
+	unlink("control");
+	unlink("video");
+	unlink("other");
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
 	msgctl(mqid, IPC_RMID, 0); //DONE
@@ -155,6 +176,8 @@ void monitor_engine(){
 } 
 
 void create_proc(){
+	create_autho_engines();
+
 	auth_request_manager_pid = fork();
 	if(auth_request_manager_pid == 0){
 		auth_request_manager();
@@ -181,17 +204,29 @@ void create_proc(){
 
 }
 
-void create_unnamed_pipes(int pipes[][2]){
-	for (int i = 0; i < config.max_auth_servers; i++) {
-		if (pipe(pipes[i]) == -1) {
-			log_message("CANNOT CREATE UNNAMED PIPE -> EXITING\n");
-			exit(1);
-		}
-	}
+void create_unnamed_pipes(){
+    pipes = malloc(config.max_auth_servers * sizeof(int*));
+    if (pipes == NULL) {
+        perror("Falha na alocação de memória para pipes");
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < config.max_auth_servers; i++) {
+        pipes[i] = malloc(2 * sizeof(int)); // Cada sub-array contém dois inteiros
+        if (pipes[i] == NULL) {
+            perror("Falha na alocação de memória para sub-array de pipes");
+            exit(EXIT_FAILURE);
+        }
+
+        if (pipe(pipes[i]) == -1) { // Criando o pipe
+            perror("Falha ao criar pipe");
+            exit(EXIT_FAILURE);
+        }
+    }
 }
 
-void create_autho_engines(int pipes[][2]){
-	log_message("AUTHORIZATION_ENGINES PROCESSES CREATED");
+void create_autho_engines(){
+	log_message("AUTHORIZATION_ENGINES PROCESSES BEING CREATED");
 	autho_engines_pid = (pid_t*) malloc(config.max_auth_servers * sizeof(pid_t));
 	for(int i = 0; i < config.max_auth_servers; i++){
 		autho_engines_pid[i] = fork();
@@ -203,24 +238,92 @@ void create_autho_engines(int pipes[][2]){
 }
 
 void read_from_unnamed(int pipes[2], int i){
+	char *message = malloc(sizeof(char)* MAX_STRING_SIZE);
 	close(pipes[1]);
-	if(read(pipes[0], ) > 0){
+	while(run){//ISTO É CONSIDERADO ESPERA ATIVA??????????????????????????????????????????????????
+		if(read(pipes[0],message, sizeof(message) ) > 0){
+			sem_wait(sem_read_count);
+			shared->read_count_shared[i] = 1;
+			sem_post(sem_read_count);
+			manage_auth(message);
+			
+		}
 		sem_wait(sem_read_count);
-		shared->read_count_shared[i] = 1;
+		shared->read_count_shared[i] = 0;
 		sem_post(sem_read_count);
-
 	}
-	sem_wait(sem_read_count);
-	shared->read_count_shared[i] = 0;
-	sem_post(sem_read_count);
 }
+
+void manage_auth(char *buf){
+	char *part1, *part2, *part3;
+	part1 = strtok(buf, "#");
+	if (part1 != NULL) {
+		part2 = strtok(NULL, "#");
+	}
+	if (part2 != NULL) {
+		part3 = strtok(NULL, "#");
+	}
+
+	if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
+		sem_wait(sem_userscount);
+		if(shared->mobile_users<config.max_mobile_user){
+			++shared->mobile_users;
+			sem_post(sem_userscount);
+			addUser(&shared->users,atoi(part1),atoi(part2));
+			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
+		}else{
+			sem_post(sem_userscount);
+			//################################################################################################################################################
+			//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
+			//################################################################################################################################################
+			log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
+		}
+	}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
+		users_ *user = searchUser(shared->users, atoi(part1));
+		if(user ==NULL){
+			printf("nao foi encontrado o user na shared\n");		//id do user nao existe
+		}else{
+			sem_wait(sem_plafond);
+			user->plafond=user->plafond - atoi(part3);
+			sem_post(sem_plafond);
+			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+		}
+	}else{
+		//################################################################################################################################################
+		//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
+		//################################################################################################################################################
+		log_message("MOBILE USER SENT WRONG PARAMETERS.");
+	}
+}
+
 
 void *sender_function(void *arg){
 	(void)arg;
 	log_message("THREAD SENDER CREATED");
-	printf("sender function created\n");
+	while (run) {
+		sem_wait(sem_controlar);
+		// Check if there are messages in the queue_console
+		if (!is_empty(q_video, mut_video)) {
+			while (!is_empty(q_video, mut_video)){
+				write_unnamed(pipes);
+			}
+		}else{
+			if(!is_empty(q_other, mut_other)){
+				sem_wait(sem_read_count);
+				for(int i=0; i<config.max_auth_servers; i++){
+					if(shared->read_count_shared[i]==0){
+						shared->read_count_shared[i]=1;
+						sem_post(sem_read_count);
+						write_unnamed(pipes);
+					}
+				}
+			}
+		}
+  	}
 	return NULL;
 }
+
+
 
 void *receiver_function(void *arg){
 	(void)arg;
@@ -258,7 +361,11 @@ void *receiver_function(void *arg){
 				printf("%s\n", buf);
 
 				buf[n]='\0';
-				int cont=0;
+
+				char copy[MAX_STRING_SIZE];
+				strncpy(copy, buf, sizeof(copy)-1);
+				copy[sizeof(copy) - 1] = '\0'; 
+
 				char *part1, *part2, *part3;
 				part1 = strtok(buf, "#");
 				if (part1 != NULL) {
@@ -267,35 +374,31 @@ void *receiver_function(void *arg){
 				if (part2 != NULL) {
 					part3 = strtok(NULL, "#");
 				}
-				printf("part1 -> %s\n part2-> %s\n",part1,part2);
-				printf("print da funçãoi part1: %d\nprint da funçãoi part2: %d\ncount:%d\n",verificaS(part1),verificaS(part2),cont);
-				if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //verificação dos dados e encaminhar para a respetiva função
-					sem_wait(sem_userscount);
-					if(shared->mobile_users<config.max_mobile_user){
-						++shared->mobile_users;
-						sem_post(sem_userscount);
-						addUser(&shared->users,atoi(part1),atoi(part2));
-						log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
-					}else{
-						sem_post(sem_userscount);
-						//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo
-						log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
-					}
-				}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){
-					auth_mobile(atoi(part1),part2,atoi(part3));
-					log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+
+				if((verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL) || (verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2 && (strcmp("SOCIAL",part2) || strcmp("MUSIC",part2)))){ //verificação dos dados e encaminhar para a respetiva função
+					add_queue(&q_other,copy,mut_other);
+					log_message("MESSAGE ADDED TO OTHERS QUEUE.");
+					printf("Adicioneiu à other a string : %s\n", copy);//so para testes
+					sem_post(sem_controlar);
+				}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2 && strcmp("VIDEO",part2)){
+					add_queue(&q_video,copy,mut_video);
+					log_message("MESSAGE ADDED TO VIDEO QUEUE.");
+					printf("Adicioneiu à video a string : %s\n", copy);//so para testes
+					sem_post(sem_controlar);
 				}else{
+					//################################################################################################################################################
+					//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
+					//################################################################################################################################################
 					log_message("MOBILE USER SENT WRONG PARAMETERS.");
 				}
 				
 			}
-			if(FD_ISSET(fd_read_back,&read_set)){
-				char buf[MAX_STRING_SIZE] = "\0";
-				int n=read(fd_read_back, buf, MAX_STRING_SIZE);
-				if(n > 0){
-					printf("%s\n", buf);
-				}
-			}
+			/*if(FD_ISSET(fd_read_back,&read_set)){
+				char buf[MAX_STRING_SIZE];
+				int n=0;
+				n=read(fd_read_back, buf, MAX_STRING_SIZE);
+				printf("%s\n", buf);
+			}*/
 		}
 	}		
 	return NULL;
@@ -366,8 +469,4 @@ bool validate_config(char* filename) {
 
     fclose(f);
     return true;
-}
-
-void auth_mobile(int id, char type[MAX_STRING_SIZE], int amount){
-	//fazer função que reparte os pedidos pelas respetivas filas
 }
