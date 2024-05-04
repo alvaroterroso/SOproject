@@ -169,29 +169,33 @@ void free_shared(){
 //#########################################################################################
 //Cria shared memory,  message queue e os processos Auth Requeste Manager e Monitor Engine
 //#########################################################################################
-void init_prog(){
-	int shm_size = sizeof(shm) + sizeof(users_)* config.max_mobile_user;
-	if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 1){
-    	log_message("ERROR IN SHMGET");
-    	exit(1);
-  	}
-	shared = (shm *)shmat(shm_id, NULL, 0);
-	if(shared == (void*)-1){
-		log_message("ERROR IN SHMAT");
-		exit(1);
-	}
-	log_message("SHARED MEMORY IS ALLOCATED");
+void init_prog() {
+    // Tamanho da estrutura shm mais o espaço necessário para o array read_count_shared
+    int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * config.max_auth_servers;
 
-	//init count
-	sem_wait(sem_read_count);
-	for(int i = 0; i < config.max_auth_servers; i++){
-		shared->read_count_shared[i] = 0;
-	}
-	sem_post(sem_read_count);
+    if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 0) {
+        log_message("ERROR IN SHMGET");
+        exit(1);
+    }
 
-	create_msq();
-	// Create processes
-	create_proc();
+    shared = (shm *)shmat(shm_id, NULL, 0);
+    if (shared == (void *)-1) {
+        log_message("ERROR IN SHMAT");
+        exit(1);
+    }
+    log_message("SHARED MEMORY IS ALLOCATED");
+
+	shared->read_count_shared= malloc(sizeof(int) * config.max_auth_servers);
+
+    // Inicializar array read_count_shared diretamente
+    sem_wait(sem_read_count);
+    for (int i = 0; i < config.max_auth_servers; i++) {
+        shared->read_count_shared[i] = 0;
+    }
+    sem_post(sem_read_count);
+
+    create_msq();
+    create_proc();
 }
 
 //-------------------Cria em específico a message queue--------------------
