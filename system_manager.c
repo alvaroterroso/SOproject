@@ -16,7 +16,7 @@ pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 
 //####################################################################################
-//Criação dos semaforos necessários , unnamed pipes, e por dar inicio ao programa
+//Criação dos semaforos necessários  e por dar inicio ao programa
 //####################################################################################
 int main(int argc, char **argv){
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
@@ -54,7 +54,6 @@ int main(int argc, char **argv){
 
 	//int pipes[config.max_auth_servers][2];// [0,0,0,0,0,0,0,0] -> [1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0] -> [0,1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0,0]
 	//ESTA LINHA NAO É PRECISA PORQUE DECLAREI NO.H E NO CREATE UNNAMED EU JA FAÇO ISSO DIREITO
-	create_unnamed_pipes();
 	init_prog();
 
 	signal(SIGINT, signal_handler);//HANDLE CTRL-C
@@ -134,28 +133,6 @@ bool validate_config(char* filename) {
 
     fclose(f);
     return true;
-}
-
-//----------------------Criar unnamed pipes---------------------
-void create_unnamed_pipes(){
-    pipes = malloc(config.max_auth_servers * sizeof(int*));
-    if (pipes == NULL) {
-        perror("Falha na alocação de memória para pipes");
-        exit(EXIT_FAILURE);
-    }
-
-    for (int i = 0; i < config.max_auth_servers; i++) {
-        pipes[i] = malloc(2 * sizeof(int)); // Cada sub-array contém dois inteiros
-        if (pipes[i] == NULL) {
-            perror("Falha na alocação de memória para sub-array de pipes");
-            exit(EXIT_FAILURE);
-        }
-
-        if (pipe(pipes[i]) == -1) { // Criando o pipe
-            perror("Falha ao criar pipe");
-            exit(EXIT_FAILURE);
-        }
-    }
 }
 
 //------------------Função que lida com o uso do ^C----------------------
@@ -263,6 +240,7 @@ void create_proc(){
 void auth_request_manager(){
 	log_message("PROCESS AUTHORIZATION_REQUEST_MANAGER CREATED");
 	//create pipes
+	create_unnamed_pipes();
 	create_pipes(USER_PIPE);
 	create_pipes(BACK_PIPE);
 	//create threads
@@ -306,6 +284,28 @@ void create_pipes(char * named){
   	}
 	snprintf(log_msg, sizeof(log_msg), "%s CREATED", named);
 	log_message(log_msg);
+}
+
+//------------------Cria em especifico os unnammed pipess-------------------
+void create_unnamed_pipes(){
+    pipes = malloc(config.max_auth_servers * sizeof(int*));
+    if (pipes == NULL) {
+        perror("Falha na alocação de memória para pipes");
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < config.max_auth_servers; i++) {
+        pipes[i] = malloc(2 * sizeof(int)); // Cada sub-array contém dois inteiros
+        if (pipes[i] == NULL) {
+            perror("Falha na alocação de memória para sub-array de pipes");
+            exit(EXIT_FAILURE);
+        }
+
+        if (pipe(pipes[i]) == -1) { // Criando o pipe
+            perror("Falha ao criar pipe");
+            exit(EXIT_FAILURE);
+        }
+    }
 }
 
 //##########################################################################################
@@ -419,6 +419,34 @@ void *sender_function(void *arg){
 	return NULL;
 }
 
+//---------------Função que escreve nos Unnamed Pipes-------------
+void write_unnamed(int **pipes){
+	char msg[MAX_STRING_SIZE];
+	char *temp = rem_queue(&q_video, mut_video);
+	if (temp) {
+		strncpy(msg, temp, MAX_STRING_SIZE);
+		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula
+		free(temp); // Supondo que você deva liberar a memória (depende de como rem_queue() aloca a string)
+	}
+
+	sem_wait(sem_read_count);
+	for(int i=0; i<config.max_auth_servers; i++){
+		if(shared->read_count_shared[i]==0){
+			shared->read_count_shared[i]=1;
+			sem_post(sem_read_count);
+			ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
+			if (num_written == -1) {
+				log_message("ERROR WRITING ON UNNAMED PIPE.");
+				run=0;
+				free_shared();
+				exit(1);
+			}
+			return;
+			
+		}
+	}
+}
+
 //###################################################
 //Cria em específico os Authorization Engines	    
 //###################################################
@@ -494,6 +522,73 @@ void manage_auth(char *buf){
 		log_message("MOBILE USER SENT WRONG PARAMETERS.");
 	}
 }
+
+//#####################################################################
+//Funções responsáveis por manipular as FILAS DE VIDEO e OTHER
+//#####################################################################
+
+//-----------------Adiciona um user à sua Fila-----------------
+void add_queue(queue **head, const char *message, pthread_mutex_t sem) {
+    // Criar um novo nó
+    queue *newNode = malloc(sizeof(queue));
+    if (newNode == NULL) {
+        fprintf(stderr, "Falha na alocação de memória\n");
+        return;
+    }
+    strncpy(newNode->message, message, MAX_STRING_SIZE);
+    newNode->message[MAX_STRING_SIZE - 1] = '\0';  // Garantir terminação nula
+    newNode->next = NULL;
+
+	pthread_mutex_lock(&sem);
+    if (*head == NULL) {
+        // Se a fila está vazia, o novo nó se torna o cabeçalho
+        *head = newNode;
+		pthread_mutex_unlock(&sem);
+		return;
+    } else {
+        // Caso contrário, encontrar o último nó
+        queue *current = *head;
+        while (current->next != NULL) {
+            current = current->next;
+        }
+        current->next = newNode;
+		pthread_mutex_unlock(&sem);
+		return;
+    }
+}
+
+//--------------Remove o user da sua Fila---------------------------------
+char *rem_queue(queue **head, pthread_mutex_t sem){
+	pthread_mutex_lock(&sem);
+    if (*head == NULL) {
+        fprintf(stderr, "A fila está vazia\n");
+		pthread_mutex_unlock(&sem);
+        return NULL;
+    }
+
+    queue *temp = *head;
+    static char message[MAX_STRING_SIZE];  // Static para retornar localmente
+    strncpy(message, temp->message, MAX_STRING_SIZE);
+
+    *head = temp->next;
+	pthread_mutex_unlock(&sem);
+    free(temp);
+
+    return message;
+}
+
+//----------------Verifica se a Fila está Vazia----------------------
+int is_empty(queue *head, pthread_mutex_t sem) {	//1 se está vazia, 0 tem elementos
+	pthread_mutex_lock(&sem);
+	if(head==NULL){
+		pthread_mutex_unlock(&sem);
+		return 1;
+	}else{
+		pthread_mutex_unlock(&sem);
+		return 0;
+	}
+}
+
 
 
 void monitor_engine(){

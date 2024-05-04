@@ -87,11 +87,6 @@ typedef struct queue{
 queue *q_video;
 queue *q_other;
 
-extern pthread_mutex_t mut_video;
-extern pthread_mutex_t mut_other;
-
-
-
 int run;
 
 //variaveis para as estatisticas	0->total data 	1->auth reqs

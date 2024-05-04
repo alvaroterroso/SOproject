@@ -24,6 +24,7 @@ int fd_read_user,fd_read_back;
 
 int **pipes;
 
+
 bool validate_config(char * filename);
 void init_prog();
 void *sender_function(void *arg);
@@ -41,5 +42,9 @@ void create_unnamed_pipes();
 void create_autho_engines();
 void read_from_unnamed(int pipes[2], int i);
 void manage_auth(char *buf);
+void add_queue(queue **head, const char *message, pthread_mutex_t sem) ;
+char *rem_queue(queue **head, pthread_mutex_t sem);
+int is_empty(queue *head, pthread_mutex_t sem);	
+void write_unnamed(int **pipes);
 
 #endif
