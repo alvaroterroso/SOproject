@@ -15,9 +15,17 @@ VER SE ESTÁ CERTO:
 pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 
+//####################################################################################
+//Criação dos semaforos necessários , unnamed pipes, e por dar inicio ao programa
+//####################################################################################
 int main(int argc, char **argv){
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
-	//dar unlink antes tbm
+
+	sem_unlink("shared");
+	sem_unlink("counter");
+	sem_unlink("read_count");
+	sem_unlink("plafond");
+	sem_unlink("control");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
@@ -60,22 +68,104 @@ int main(int argc, char **argv){
 	return 0;
 }
 
+//------------Função de verificação dos parametros-------------
+bool validate_config(char* filename) {
+    FILE *f = fopen(filename, "r");
+
+    if (f == NULL) {
+        log_message("UNABLE TO OPEN CONFIG FILE");
+        return false;
+    }
+    int aux;
+
+	//Read MAX_MOBILE_USER
+	if (fscanf(f, "%d", &aux) < 1 || aux < 0) {
+        snprintf(log_msg, sizeof(log_msg), "Error reading %s: MAX_MOBILE_USER %d must be >= 0", filename, aux);
+        log_message(log_msg);
+        fclose(f);
+        return false;
+    }
+    config.max_mobile_user = aux;
+
+    //Read QUEUE_POS
+    if (fscanf(f, "%d", &aux) < 1 || aux < 0) {
+        snprintf(log_msg, sizeof(log_msg), "Error reading %s: QUEUE_POS %d must be >= 0", filename, aux);
+        log_message(log_msg);
+        fclose(f);
+        return false;
+    }
+    config.queue_slot_number = aux;
+
+    //Read AUTH_SERVERS_MAX
+    if (fscanf(f, "%d", &aux) < 1 || aux < 1) {
+        snprintf(log_msg, sizeof(log_msg), "Error reading %s: AUTH_SERVERS_MAX %d must be >= 1", filename, aux);
+        log_message(log_msg);
+        fclose(f);
+        return false;
+    }
+    config.max_auth_servers = aux;
+
+    //Read AUTH_PROC_TIME
+    if (fscanf(f, "%d", &aux) < 1 || aux < 0) {
+        snprintf(log_msg, sizeof(log_msg), "Error reading %s: AUTH_PROC_TIME %d must be >= 0", filename, aux);
+        log_message(log_msg);
+        fclose(f);
+        return false;
+    }
+    config.auth_proc_time = aux;
+
+    //Read MAX_VIDEO_WAIT
+    if (fscanf(f, "%d", &aux) < 1 || aux < 1) {
+        snprintf(log_msg, sizeof(log_msg), "Error reading %s: MAX_VIDEO_WAIT %d must be >= 1", filename, aux);
+        log_message(log_msg);
+        fclose(f);
+        return false;
+    }
+    config.max_video_wait = aux;
+
+    //Read MAX_OTHERS_WAIT
+    if (fscanf(f, "%d", &aux) < 1 || aux < 1) {
+        snprintf(log_msg, sizeof(log_msg), "Error reading %s: MAX_OTHERS_WAIT %d must be >= 1", filename, aux);
+        log_message(log_msg);
+        fclose(f);
+        return false;
+    }
+    config.max_others_wait = aux;
+
+    fclose(f);
+    return true;
+}
+
+//----------------------Criar unnamed pipes---------------------
+void create_unnamed_pipes(){
+    pipes = malloc(config.max_auth_servers * sizeof(int*));
+    if (pipes == NULL) {
+        perror("Falha na alocação de memória para pipes");
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < config.max_auth_servers; i++) {
+        pipes[i] = malloc(2 * sizeof(int)); // Cada sub-array contém dois inteiros
+        if (pipes[i] == NULL) {
+            perror("Falha na alocação de memória para sub-array de pipes");
+            exit(EXIT_FAILURE);
+        }
+
+        if (pipe(pipes[i]) == -1) { // Criando o pipe
+            perror("Falha ao criar pipe");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+//------------------Função que lida com o uso do ^C----------------------
 void signal_handler(){
 	free_shared();
 	kill(0, SIGTERM); // kills all processes
 	exit(0);
 }
 
-void create_pipes(char * named){
-	unlink(named);
-	if ((mkfifo(named, O_CREAT | O_EXCL | 0700)<0) && (errno != EEXIST)){
-    	log_message("CANNOT CREATE NAMED PIPE -> EXITING\n");
-    	exit(1);
-  	}
-	snprintf(log_msg, sizeof(log_msg), "%s CREATED", named);
-	log_message(log_msg);
-}
-
+//-----------------Função que destroi semaforos, mutex, shared memory e message queue-----------------------
 void free_shared(){
 	run=0;
 	sem_destroy(sem_shared);
@@ -99,15 +189,9 @@ void free_shared(){
 	unlink(USER_PIPE);
 }
 
-void create_msq(){
-  	if((mqid = msgget(IPC_PRIVATE, IPC_CREAT|0777)) == -1){
-		log_message("ERROR CREATING MSG QUEUE");
-		free_shared();
-		exit(1);
-  	}
-	log_message("MESSAGE QUEUE IS ALLOCATED");
-}
-
+//#########################################################################################
+//Cria shared memory,  message queue e os processos Auth Requeste Manager e Monitor Engine
+//#########################################################################################
 void init_prog(){
 	int shm_size = sizeof(shm) + sizeof(users_)* config.max_mobile_user;
 	if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 1){
@@ -128,56 +212,25 @@ void init_prog(){
 	}
 	sem_post(sem_read_count);
 
-	create_pipes(USER_PIPE);
-	create_pipes(BACK_PIPE);
 	create_msq();
 	// Create processes
 	create_proc();
-
-	//criação dos semaforos responsaveis pela shared memory
-	sem_unlink("shared");
-	sem_unlink("counter");
 }
 
-void auth_request_manager(){
-	log_message("PROCESS AUTHORIZATION_REQUEST_MANAGER CREATED");
-	//create threads
-
-	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0)
-	{
-		log_message("CANNOT CREATE SENDER_THREAD");
+//-------------------Cria em específico a message queue--------------------
+void create_msq(){
+  	if((mqid = msgget(IPC_PRIVATE, IPC_CREAT|0777)) == -1){
+		log_message("ERROR CREATING MSG QUEUE");
 		free_shared();
 		exit(1);
-	}
-
-	if (pthread_create(&receiver_thread, NULL, receiver_function, NULL) != 0)
-	{
-		log_message("CANNOT CREATE RECEIVER_THREAD");
-		free_shared();
-		exit(1);
-	}
-
-	if(pthread_join(receiver_thread, NULL)!= 0){
-		log_message("CANNOT JOIN RECEIVER_THREAD");
-		free_shared();
-		exit(1);
-	}
-
-	if(pthread_join(sender_thread, NULL)!= 0){
-		log_message("CANNOT JOIN SENDER_THREAD");
-		free_shared();
-		exit(1);
-	}
-
+  	}
+	log_message("MESSAGE QUEUE IS ALLOCATED");
 }
 
-void monitor_engine(){
-	log_message("PROCESS MONITOR_ENGINE CREATED");
-} 
-
+//###########################################################
+//Função que cria os Auth Request Manager e Monitor Engine
+//###########################################################
 void create_proc(){
-	create_autho_engines();
-
 	auth_request_manager_pid = fork();
 	if(auth_request_manager_pid == 0){
 		auth_request_manager();
@@ -204,127 +257,60 @@ void create_proc(){
 
 }
 
-void create_unnamed_pipes(){
-    pipes = malloc(config.max_auth_servers * sizeof(int*));
-    if (pipes == NULL) {
-        perror("Falha na alocação de memória para pipes");
-        exit(EXIT_FAILURE);
-    }
+//####################################################################################
+//Função que cria os pipes, as threads SENDER e RECEIVER e os AUTHORIZATION ENGINES
+//####################################################################################
+void auth_request_manager(){
+	log_message("PROCESS AUTHORIZATION_REQUEST_MANAGER CREATED");
+	//create pipes
+	create_pipes(USER_PIPE);
+	create_pipes(BACK_PIPE);
+	//create threads
 
-    for (int i = 0; i < config.max_auth_servers; i++) {
-        pipes[i] = malloc(2 * sizeof(int)); // Cada sub-array contém dois inteiros
-        if (pipes[i] == NULL) {
-            perror("Falha na alocação de memória para sub-array de pipes");
-            exit(EXIT_FAILURE);
-        }
+	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0)
+	{
+		log_message("CANNOT CREATE SENDER_THREAD");
+		free_shared();
+		exit(1);
+	}
 
-        if (pipe(pipes[i]) == -1) { // Criando o pipe
-            perror("Falha ao criar pipe");
-            exit(EXIT_FAILURE);
-        }
-    }
+	if (pthread_create(&receiver_thread, NULL, receiver_function, NULL) != 0)
+	{
+		log_message("CANNOT CREATE RECEIVER_THREAD");
+		free_shared();
+		exit(1);
+	}
+
+	create_autho_engines();
+
+	if(pthread_join(receiver_thread, NULL)!= 0){
+		log_message("CANNOT JOIN RECEIVER_THREAD");
+		free_shared();
+		exit(1);
+	}
+
+	if(pthread_join(sender_thread, NULL)!= 0){
+		log_message("CANNOT JOIN SENDER_THREAD");
+		free_shared();
+		exit(1);
+	}
+
 }
 
-void create_autho_engines(){
-	log_message("AUTHORIZATION_ENGINES PROCESSES BEING CREATED");
-	autho_engines_pid = (pid_t*) malloc(config.max_auth_servers * sizeof(pid_t));
-	for(int i = 0; i < config.max_auth_servers; i++){
-		autho_engines_pid[i] = fork();
-		if(autho_engines_pid[i] == 0){
-			read_from_unnamed(pipes[i], i);
-			exit(0);
-		}
-	}
-}
-
-void read_from_unnamed(int pipes[2], int i){
-	char *message = malloc(sizeof(char)* MAX_STRING_SIZE);
-	close(pipes[1]);
-	while(run){//ISTO É CONSIDERADO ESPERA ATIVA??????????????????????????????????????????????????
-		if(read(pipes[0],message, sizeof(message) ) > 0){
-			sem_wait(sem_read_count);
-			shared->read_count_shared[i] = 1;
-			sem_post(sem_read_count);
-			manage_auth(message);
-			
-		}
-		sem_wait(sem_read_count);
-		shared->read_count_shared[i] = 0;
-		sem_post(sem_read_count);
-	}
-}
-
-void manage_auth(char *buf){
-	char *part1, *part2, *part3;
-	part1 = strtok(buf, "#");
-	if (part1 != NULL) {
-		part2 = strtok(NULL, "#");
-	}
-	if (part2 != NULL) {
-		part3 = strtok(NULL, "#");
-	}
-
-	if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
-		sem_wait(sem_userscount);
-		if(shared->mobile_users<config.max_mobile_user){
-			++shared->mobile_users;
-			sem_post(sem_userscount);
-			addUser(&shared->users,atoi(part1),atoi(part2));
-			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
-		}else{
-			sem_post(sem_userscount);
-			//################################################################################################################################################
-			//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
-			//################################################################################################################################################
-			log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
-		}
-	}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
-		users_ *user = searchUser(shared->users, atoi(part1));
-		if(user ==NULL){
-			printf("nao foi encontrado o user na shared\n");		//id do user nao existe
-		}else{
-			sem_wait(sem_plafond);
-			user->plafond=user->plafond - atoi(part3);
-			sem_post(sem_plafond);
-			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-		}
-	}else{
-		//################################################################################################################################################
-		//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
-		//################################################################################################################################################
-		log_message("MOBILE USER SENT WRONG PARAMETERS.");
-	}
-}
-
-
-void *sender_function(void *arg){
-	(void)arg;
-	log_message("THREAD SENDER CREATED");
-	while (run) {
-		sem_wait(sem_controlar);
-		// Check if there are messages in the queue_console
-		if (!is_empty(q_video, mut_video)) {
-			while (!is_empty(q_video, mut_video)){
-				write_unnamed(pipes);
-			}
-		}else{
-			if(!is_empty(q_other, mut_other)){
-				sem_wait(sem_read_count);
-				for(int i=0; i<config.max_auth_servers; i++){
-					if(shared->read_count_shared[i]==0){
-						shared->read_count_shared[i]=1;
-						sem_post(sem_read_count);
-						write_unnamed(pipes);
-					}
-				}
-			}
-		}
+//------------------Cria em especifico os nammed pipes--------------------
+void create_pipes(char * named){
+	unlink(named);
+	if ((mkfifo(named, O_CREAT | O_EXCL | 0700)<0) && (errno != EEXIST)){
+    	log_message("CANNOT CREATE NAMED PIPE -> EXITING\n");
+    	exit(1);
   	}
-	return NULL;
+	snprintf(log_msg, sizeof(log_msg), "%s CREATED", named);
+	log_message(log_msg);
 }
 
-
-
+//##########################################################################################
+//Função responsável por ler os Mobile Users e adicionar na fila VIDEO QUEUE ou OTHER QUEUE
+//##########################################################################################
 void *receiver_function(void *arg){
 	(void)arg;
 	log_message("THREAD RECEIVER CREATED");
@@ -404,69 +390,112 @@ void *receiver_function(void *arg){
 	return NULL;
 }
 
-bool validate_config(char* filename) {
-    FILE *f = fopen(filename, "r");
-
-    if (f == NULL) {
-        log_message("UNABLE TO OPEN CONFIG FILE");
-        return false;
-    }
-    int aux;
-
-	//Read MAX_MOBILE_USER
-	if (fscanf(f, "%d", &aux) < 1 || aux < 0) {
-        snprintf(log_msg, sizeof(log_msg), "Error reading %s: MAX_MOBILE_USER %d must be >= 0", filename, aux);
-        log_message(log_msg);
-        fclose(f);
-        return false;
-    }
-    config.max_mobile_user = aux;
-
-    //Read QUEUE_POS
-    if (fscanf(f, "%d", &aux) < 1 || aux < 0) {
-        snprintf(log_msg, sizeof(log_msg), "Error reading %s: QUEUE_POS %d must be >= 0", filename, aux);
-        log_message(log_msg);
-        fclose(f);
-        return false;
-    }
-    config.queue_slot_number = aux;
-
-    //Read AUTH_SERVERS_MAX
-    if (fscanf(f, "%d", &aux) < 1 || aux < 1) {
-        snprintf(log_msg, sizeof(log_msg), "Error reading %s: AUTH_SERVERS_MAX %d must be >= 1", filename, aux);
-        log_message(log_msg);
-        fclose(f);
-        return false;
-    }
-    config.max_auth_servers = aux;
-
-    //Read AUTH_PROC_TIME
-    if (fscanf(f, "%d", &aux) < 1 || aux < 0) {
-        snprintf(log_msg, sizeof(log_msg), "Error reading %s: AUTH_PROC_TIME %d must be >= 0", filename, aux);
-        log_message(log_msg);
-        fclose(f);
-        return false;
-    }
-    config.auth_proc_time = aux;
-
-    //Read MAX_VIDEO_WAIT
-    if (fscanf(f, "%d", &aux) < 1 || aux < 1) {
-        snprintf(log_msg, sizeof(log_msg), "Error reading %s: MAX_VIDEO_WAIT %d must be >= 1", filename, aux);
-        log_message(log_msg);
-        fclose(f);
-        return false;
-    }
-    config.max_video_wait = aux;
-
-    //Read MAX_OTHERS_WAIT
-    if (fscanf(f, "%d", &aux) < 1 || aux < 1) {
-        snprintf(log_msg, sizeof(log_msg), "Error reading %s: MAX_OTHERS_WAIT %d must be >= 1", filename, aux);
-        log_message(log_msg);
-        fclose(f);
-        return false;
-    }
-    config.max_others_wait = aux;
-
-    fclose(f);
-    return true;
+//################################################################################################################
+//Função que le os dados das filas, priorizando a fila de VIDEO e reencaminha pelos Unnamed Pipes o conteúdo lido
+//################################################################################################################
+void *sender_function(void *arg){
+	(void)arg;
+	log_message("THREAD SENDER CREATED");
+	while (run) {
+		sem_wait(sem_controlar);
+		// Check if there are messages in the queue_console
+		if (!is_empty(q_video, mut_video)) {
+			while (!is_empty(q_video, mut_video)){
+				write_unnamed(pipes);
+			}
+		}else{
+			if(!is_empty(q_other, mut_other)){
+				sem_wait(sem_read_count);
+				for(int i=0; i<config.max_auth_servers; i++){
+					if(shared->read_count_shared[i]==0){
+						shared->read_count_shared[i]=1;
+						sem_post(sem_read_count);
+						write_unnamed(pipes);
+					}
+				}
+			}
+		}
+  	}
+	return NULL;
 }
+
+//###################################################
+//Cria em específico os Authorization Engines	    
+//###################################################
+void create_autho_engines(){
+	log_message("AUTHORIZATION_ENGINES PROCESSES BEING CREATED");
+	autho_engines_pid = (pid_t*) malloc(config.max_auth_servers * sizeof(pid_t));
+	for(int i = 0; i < config.max_auth_servers; i++){
+		autho_engines_pid[i] = fork();
+		if(autho_engines_pid[i] == 0){
+			read_from_unnamed(pipes[i], i);
+			exit(0);
+		}
+	}
+}
+
+//-----------------Lê os unnamed pipes através do Authorization Engine-----------
+void read_from_unnamed(int pipes[2], int i){
+	char *message = malloc(sizeof(char)* MAX_STRING_SIZE);
+	close(pipes[1]);
+	while(run){//ISTO É CONSIDERADO ESPERA ATIVA??????????????????????????????????????????????????
+		if(read(pipes[0],message, sizeof(message) ) > 0){
+			sem_wait(sem_read_count);
+			shared->read_count_shared[i] = 1;
+			sem_post(sem_read_count);
+			manage_auth(message);
+			
+		}
+		sem_wait(sem_read_count);
+		shared->read_count_shared[i] = 0;
+		sem_post(sem_read_count);
+	}
+}
+
+//---------------Esta função é responsável por tratar os dados lidos dos Unnamed Pipes----------------
+void manage_auth(char *buf){
+	char *part1, *part2, *part3;
+	part1 = strtok(buf, "#");
+	if (part1 != NULL) {
+		part2 = strtok(NULL, "#");
+	}
+	if (part2 != NULL) {
+		part3 = strtok(NULL, "#");
+	}
+
+	if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
+		sem_wait(sem_userscount);
+		if(shared->mobile_users<config.max_mobile_user){
+			++shared->mobile_users;
+			sem_post(sem_userscount);
+			addUser(&shared->users,atoi(part1),atoi(part2));
+			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
+		}else{
+			sem_post(sem_userscount);
+			//################################################################################################################################################
+			//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
+			//################################################################################################################################################
+			log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
+		}
+	}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
+		users_ *user = searchUser(shared->users, atoi(part1));
+		if(user ==NULL){
+			printf("nao foi encontrado o user na shared\n");		//id do user nao existe
+		}else{
+			sem_wait(sem_plafond);
+			user->plafond=user->plafond - atoi(part3);
+			sem_post(sem_plafond);
+			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+		}
+	}else{
+		//################################################################################################################################################
+		//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
+		//################################################################################################################################################
+		log_message("MOBILE USER SENT WRONG PARAMETERS.");
+	}
+}
+
+
+void monitor_engine(){
+	log_message("PROCESS MONITOR_ENGINE CREATED");
+} 
