@@ -11,7 +11,7 @@ VER SE ESTÁ CERTO:
 */
 
 #include "system_manager.h"
-
+#define MAX_VIDEO_BATCH 3
 pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 
@@ -404,51 +404,49 @@ void *receiver_function(void *arg){
 //################################################################################################################
 //Função que le os dados das filas, priorizando a fila de VIDEO e reencaminha pelos Unnamed Pipes o conteúdo lido
 //################################################################################################################
-void *sender_function(void *arg){
-	(void)arg;
-	log_message("THREAD SENDER CREATED");
-	while (run) {
-		sem_wait(sem_controlar);
-		// Check if there are messages in the queue_console
-		if (!is_empty(q_video, mut_video)) {
-			while (!is_empty(q_video, mut_video)){
-				sem_wait(sem_read_count);
-				bool found= false;
-				for(int i=0; i<config.max_auth_servers; i++){
-					if(shared->read_count_shared[i]==0){
-						shared->read_count_shared[i]=1;
-						sem_post(sem_read_count);
-						write_unnamed(q_video, mut_video, i);
-						found = true;
-						break;
-					}
-				}
-				if(!found){
-					sem_post(sem_read_count);
-					//ADICIONAR AQUI O QUE FAZER QUANDO TODOS OS AUTHORIZATION ENGINES TIVEREM CHEIOS
-				}
-			}
-		}else{
-			if(!is_empty(q_other, mut_other)){
-				sem_wait(sem_read_count);
-				bool found= false;
-				for(int i=0; i<config.max_auth_servers; i++){
-					if(shared->read_count_shared[i]==0){
-						shared->read_count_shared[i]=1;
-						sem_post(sem_read_count);
-						write_unnamed(q_other, mut_other, i);
-						found = true;
-						break;
-					}
-				}
-				if(!found){
-					sem_post(sem_read_count);
-					//ADICIONAR AQUI O QUE FAZER QUANDO TODOS OS AUTHORIZATION ENGINES TIVEREM CHEIOS
-				}
-			}
-		}
-  	}
-	return NULL;
+void *sender_function(void *arg) {
+    (void)arg;
+    log_message("THREAD SENDER CREATED");
+    int videoProcessedCount = 0;
+
+    while (run) {
+        sem_wait(sem_controlar);
+
+        // Processa a fila de vídeo
+        if (!is_empty(q_video, mut_video)) {
+            log_message("Checking video queue...");
+            videoProcessedCount = 0;
+            while (!is_empty(q_video, mut_video) && videoProcessedCount < MAX_VIDEO_BATCH) {
+                process_queue_item(&q_video, mut_video);
+                videoProcessedCount++;
+            }
+        }
+
+        // Processa a fila de "other" a cada ciclo da fila de vídeo
+        if (!is_empty(q_other, mut_other)) {
+            log_message("Checking other queue...");
+            process_queue_item(&q_other, mut_other);
+        }
+    }
+    return NULL;
+}
+
+void process_queue_item(queue **q, pthread_mutex_t mut) {
+    sem_wait(sem_read_count);
+    bool found = false;
+    for (int i = 0; i < config.max_auth_servers; i++) {
+        if (shared->read_count_shared[i] == 0) {
+            shared->read_count_shared[i] = 1;
+            write_unnamed(*q, mut, i);
+            found = true;
+			sem_post(sem_read_count);
+            break;
+        }
+    }
+    if (!found) {
+        sem_post(sem_read_count);
+        log_message("No available auth engines, waiting...");
+    }
 }
 
 //---------------Função que escreve nos Unnamed Pipes-------------
@@ -461,7 +459,7 @@ void write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 	}
 
 	ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
-	printf("---->ACABEI DE ESCREVER NO UNNAMED : %s\n", msg);
+	printf("ACABEI DE ESCREVER NO UNNAMED : %s\n", msg);
 	if (num_written == -1) {
 		log_message("ERROR WRITING ON UNNAMED PIPE.");
 		run=0;
@@ -588,20 +586,18 @@ void add_queue(queue **head, const char *message, pthread_mutex_t sem) {
 }
 
 //--------------Remove o user da sua Fila---------------------------------
-char *rem_queue(queue **head, pthread_mutex_t sem){
-	pthread_mutex_lock(&sem);
+char *rem_queue(queue **head, pthread_mutex_t sem) {
+    pthread_mutex_lock(&sem);
     if (*head == NULL) {
-        printf("A fila está vazia\n");
-		pthread_mutex_unlock(&sem);
+        pthread_mutex_unlock(&sem);
         return NULL;
     }
 
     queue *temp = *head;
-    static char message[MAX_STRING_SIZE];  // Static para retornar localmente
-    strncpy(message, temp->message, MAX_STRING_SIZE);
-	printf("RETIREI DA FILA DE ESPERA A STRING : %s \n", message);
+    char *message = strdup(temp->message); // Use strdup to return a copy of the message.
     *head = temp->next;
-	pthread_mutex_unlock(&sem);
+    free(temp);  // Free the node
+    pthread_mutex_unlock(&sem);
 
     return message;
 }
@@ -611,13 +607,29 @@ int is_empty(queue *head, pthread_mutex_t sem) {	//1 se está vazia, 0 tem eleme
 	pthread_mutex_lock(&sem);
 	if(head==NULL){
 		pthread_mutex_unlock(&sem);
+		print_queue(head, sem); 
 		return 1;
 	}else{
 		pthread_mutex_unlock(&sem);
+		print_queue(head, sem); 
 		return 0;
 	}
 }
 
+void print_queue(queue *head, pthread_mutex_t sem) {
+    pthread_mutex_lock(&sem); // Garante acesso exclusivo à fila
+    queue *current = head;
+    printf("Current Queue:\n");
+    if (current == NULL) {
+        printf("The queue is empty.\n");
+    }
+    while (current != NULL) {
+        printf("Message: %s\n", current->message);
+        current = current->next;
+    }
+	printf("Fim do print da fila\n");
+    pthread_mutex_unlock(&sem); // Libera o acesso à fila
+}
 
 
 void monitor_engine(){
