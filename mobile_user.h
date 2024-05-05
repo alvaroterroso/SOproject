@@ -8,7 +8,7 @@
 #include "system_manager.h"
 //mutex mobile user count
 mobile_user_struct new_mobile_user;
-sem_t * mens_pipe, * request_number, *sem_full;
+sem_t *sem_full;
 pthread_t worker[3];
 void clear_resources();
 void *send_data(void* arg);

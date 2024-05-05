@@ -6,6 +6,8 @@
 #include "system_manager.h"
 #include <time.h>
 
+//mutex log
+pthread_mutex_t log_mutex= PTHREAD_MUTEX_INITIALIZER; 
 
 // Function to log messages
 int log_message(char* message) {
@@ -39,7 +41,7 @@ int log_message(char* message) {
 	return 0;
 }
 
-void addUser(users_ **head, int id_, int plaf) {				
+void addUser(users_ **head, int id_, int plaf) {			
     users_ *new_node = (users_ *)malloc(sizeof(users_));				//NO FIM DO PROGRAMA DAR FREE, OU NS ONDE É MSM :)
     if (new_node == NULL) {
         fprintf(stderr, "Erro ao alocar memória\n");
@@ -50,7 +52,10 @@ void addUser(users_ **head, int id_, int plaf) {
 	sem_wait(sem_shared);
     new_node->next = *head;
     *head = new_node;
+	printf("LOGIN FEITO-> VAMOS VER SE SAI DA FUNÇÃO\n");
 	sem_post(sem_shared);
+	printf("LOGIN FEITO-> SO FALTA O RETURN\n");
+	return;
 }
 
 users_* searchUser(users_ *head, int id_) {

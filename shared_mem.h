@@ -76,6 +76,7 @@ shm *shared;
 sem_t *sem_shared; //semaforo para lidar com a fila da shared memory
 sem_t *sem_userscount; //semaforo para lidar com o usercount da shared memory
 sem_t *sem_read_count; //semaforo para lidar com o read_count da shared memory
+sem_t *sem_login1st;  //ter a certexa que o login ja foi adiconado á shared memory para poder fazer o resto depois
 
 sem_t *sem_controlar; //semaforo que só deixa a sender verificar se ha mensagens para ler ( só desbloqueia quando alguem envia para a fila)
 

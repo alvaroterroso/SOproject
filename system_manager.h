@@ -24,6 +24,7 @@ int fd_read_user,fd_read_back;
 
 int **pipes;
 
+int flag;//só deixar os pedidos de dados serem feitos depois do login ter sido registado
 
 bool validate_config(char * filename);
 void init_prog();
@@ -40,11 +41,11 @@ void auth_mobile(int id, char type[MAX_STRING_SIZE], int amount);
 void create_msq();
 void create_unnamed_pipes();
 void create_autho_engines();
-void read_from_unnamed(int pipes[2], int i);
+void read_from_unnamed(int i);
 void manage_auth(char *buf);
 void add_queue(queue **head, const char *message, pthread_mutex_t sem) ;
 char *rem_queue(queue **head, pthread_mutex_t sem);
 int is_empty(queue *head, pthread_mutex_t sem);	
-void write_unnamed(int **pipes);
+void write_unnamed(queue *q_some, pthread_mutex_t mut, int i);
 
 #endif

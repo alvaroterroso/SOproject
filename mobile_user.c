@@ -5,6 +5,8 @@
 int fd_write;
 int full=0;
 
+pthread_mutex_t mens_pipe = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t request_number = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv){
 	if(argc < 7){
@@ -40,16 +42,9 @@ int main(int argc, char **argv){
 		exit(1);
 	}
 	write(fd_write, log_msg, sizeof(log_msg));
-	log_message("MENSAGEM ESCRITA");
-
-	sem_unlink("escrita");
-	mens_pipe = sem_open("escrita", O_CREAT|O_EXCL, 0777,1);
-
-	sem_unlink("requests");
-	request_number = sem_open("requests", O_CREAT|O_EXCL, 0777,1);
 
 	sem_unlink("full");
-	sem_full = sem_open("full", O_CREAT|O_EXCL, 0777,1);
+	sem_full = sem_open("full", O_CREAT|O_EXCL, 0777,1); //semaforo pq quem vai utilizar este semaforo tambem é o auth engine que é um processo
 	
 	int intervalos[3] = {new_mobile_user.video_interval, new_mobile_user.music_interval, new_mobile_user.social_interval};
 	char *tipo[3] = {"VIDEO", "MUSIC", "SOCIAL"};
@@ -96,26 +91,36 @@ void clear_resources(){
 
 }
 
-void *send_data(void* arg){//VER SE POSSO USAR UMA SHARED VARIABLE PARA IR DECREMENTANDO O NUMERO DE REQUESTS
- 	ThreadArg *thread = (ThreadArg*) arg;
-	sem_wait(request_number);
+void *send_data(void* arg) {
+    ThreadArg *thread = (ThreadArg*) arg;
 
-	while(new_mobile_user.auth_request_number>0){
-		sem_wait(sem_full);
-		if(full!=1){
-			sem_post(sem_full);
-			--new_mobile_user.auth_request_number;
-			sem_post(request_number);
-			snprintf(log_msg, sizeof(log_msg), "%d#%s#%d",new_mobile_user.id, thread->tipo, new_mobile_user.to_reserve_data);
-			sem_wait(mens_pipe);
-			write(fd_write, log_msg, sizeof(log_msg));
-			sem_post(mens_pipe);
-			sleep(thread->interval);
-		}else{
-			sem_post(sem_full);
-			break;
+    while (1) {
+        pthread_mutex_lock(&request_number); // Espera pelo semáforo para manipular o número de requisições
+
+        // Checa se ainda há requisições e se o sistema não está cheio
+        if (new_mobile_user.auth_request_number <= 0 || full == 1) {
+            pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições ou se o sistema está cheio
+            break; // Sai do loop se não há mais requisições ou se o sistema está cheio
+        }
+
+        // Decrementa o número de requisições de forma segura
+        --new_mobile_user.auth_request_number;
+        pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
+
+        // Prepara a mensagem a ser enviada
+        int nbytes = snprintf(log_msg, sizeof(log_msg), "%d#%s#%d", new_mobile_user.id, thread->tipo, new_mobile_user.to_reserve_data);
+		if (nbytes >= sizeof(log_msg)) {
+			// Indica que a saída foi truncada
+			log_msg[sizeof(log_msg) - 1] = '\0';
 		}
-	}
-	sem_post(request_number);
-	return NULL;
+        printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
+
+		pthread_mutex_lock(&mens_pipe);
+        write(fd_write, log_msg, sizeof(log_msg)); // Envia a mensagem
+        pthread_mutex_unlock(&mens_pipe); // Libera o semáforo após enviar a mensagem
+
+        sleep(thread->interval); // Aguarda pelo intervalo especificado antes de enviar a próxima mensagem
+    }
+
+    return NULL;
 }

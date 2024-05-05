@@ -29,6 +29,7 @@ int main(int argc, char **argv){
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
+	sem_login1st = sem_open("login",O_CREAT|O_EXCL, 0777,0);
 	sem_plafond = sem_open("plafond",O_CREAT|O_EXCL, 0777,1);
 	sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
 
@@ -150,8 +151,10 @@ void free_shared(){
 	sem_destroy(sem_read_count);
 	sem_destroy(sem_plafond);
 	sem_destroy(sem_controlar);
+	sem_destroy(sem_login1st);
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
+	unlink("login");
 	unlink("shared");
 	unlink("counter");
 	unlink("read_count");
@@ -197,6 +200,7 @@ void init_prog() {
     create_msq();
     create_proc();
 }
+
 
 //-------------------Cria em específico a message queue--------------------
 void create_msq(){
@@ -335,6 +339,7 @@ void *receiver_function(void *arg){
 	log_message("BACK_PIPE FOR READING IS OPEN!");
 
 	printf("VOU COMEÇAR A LER: A ENTRAR NO WHILE\n");
+
 	while(1){
 		fd_set read_set;
 		FD_ZERO(&read_set);
@@ -343,46 +348,48 @@ void *receiver_function(void *arg){
 		FD_SET(fd_read_back, &read_set);
 		int nfds = (fd_read_user > fd_read_back ? fd_read_user : fd_read_back) + 1;
 		if(select(nfds,&read_set,NULL,NULL,NULL)>0){
-			if(FD_ISSET(fd_read_user,&read_set)){
-				log_message("A LER O QUE FOI ENVIADO");
-				char buf[MAX_STRING_SIZE];
-				int n=0;
-				n=read(fd_read_user, buf, MAX_STRING_SIZE);
-				printf("%s\n", buf);
+			if (FD_ISSET(fd_read_user, &read_set)) {
 
-				buf[n]='\0';
+                char buf[MAX_STRING_SIZE];
+                int n = read(fd_read_user, buf, MAX_STRING_SIZE);
+                if (n > 0) {
 
-				char copy[MAX_STRING_SIZE];
-				strncpy(copy, buf, sizeof(copy)-1);
-				copy[sizeof(copy) - 1] = '\0'; 
+                    buf[n] = '\0';
+                    char copy[MAX_STRING_SIZE];
+                    strncpy(copy, buf, sizeof(copy) - 1);
+                    copy[sizeof(copy) - 1] = '\0';
 
-				char *part1, *part2, *part3;
-				part1 = strtok(buf, "#");
-				if (part1 != NULL) {
-					part2 = strtok(NULL, "#");
-				}
-				if (part2 != NULL) {
-					part3 = strtok(NULL, "#");
-				}
+					printf("String inteira: %s\n",buf);
 
-				if((verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL) || (verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2 && (strcmp("SOCIAL",part2) || strcmp("MUSIC",part2)))){ //verificação dos dados e encaminhar para a respetiva função
-					add_queue(&q_other,copy,mut_other);
-					log_message("MESSAGE ADDED TO OTHERS QUEUE.");
-					printf("Adicioneiu à other a string : %s\n", copy);//so para testes
-					sem_post(sem_controlar);
-				}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2 && strcmp("VIDEO",part2)){
-					add_queue(&q_video,copy,mut_video);
-					log_message("MESSAGE ADDED TO VIDEO QUEUE.");
-					printf("Adicioneiu à video a string : %s\n", copy);//so para testes
-					sem_post(sem_controlar);
-				}else{
-					//################################################################################################################################################
-					//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
-					//################################################################################################################################################
-					log_message("MOBILE USER SENT WRONG PARAMETERS.");
-				}
-				
-			}
+                    char *part1, *part2, *part3;
+					part1 = strtok(buf, "#");
+					if (part1 != NULL) {
+						part2 = strtok(NULL, "#");
+					}
+					if (part2 != NULL) {
+						part3 = strtok(NULL, "#");
+					}
+
+
+                    if ((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
+                        if (strcmp("VIDEO", part2) == 0) {
+							add_queue(&q_video, copy, mut_video);
+							printf("MESSAGE ADDED TO VIDEO QUEUE.\n");
+							sem_post(sem_controlar);
+                        } else {
+                            add_queue(&q_other, copy, mut_other);
+							printf("MESSAGE ADDED TO OTHERS QUEUE.\n");
+							sem_post(sem_controlar);
+                        }
+                    } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
+                        add_queue(&q_other, copy, mut_other);
+                        printf("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
+						sem_post(sem_controlar);
+                    } else {
+                        log_message("MOBILE USER SENT WRONG PARAMETERS.");
+                    }
+                }
+            }
 			/*if(FD_ISSET(fd_read_back,&read_set)){
 				char buf[MAX_STRING_SIZE];
 				int n=0;
@@ -405,17 +412,38 @@ void *sender_function(void *arg){
 		// Check if there are messages in the queue_console
 		if (!is_empty(q_video, mut_video)) {
 			while (!is_empty(q_video, mut_video)){
-				write_unnamed(pipes);
-			}
-		}else{
-			if(!is_empty(q_other, mut_other)){
 				sem_wait(sem_read_count);
+				bool found= false;
 				for(int i=0; i<config.max_auth_servers; i++){
 					if(shared->read_count_shared[i]==0){
 						shared->read_count_shared[i]=1;
 						sem_post(sem_read_count);
-						write_unnamed(pipes);
+						write_unnamed(q_video, mut_video, i);
+						found = true;
+						break;
 					}
+				}
+				if(!found){
+					sem_post(sem_read_count);
+					//ADICIONAR AQUI O QUE FAZER QUANDO TODOS OS AUTHORIZATION ENGINES TIVEREM CHEIOS
+				}
+			}
+		}else{
+			if(!is_empty(q_other, mut_other)){
+				sem_wait(sem_read_count);
+				bool found= false;
+				for(int i=0; i<config.max_auth_servers; i++){
+					if(shared->read_count_shared[i]==0){
+						shared->read_count_shared[i]=1;
+						sem_post(sem_read_count);
+						write_unnamed(q_other, mut_other, i);
+						found = true;
+						break;
+					}
+				}
+				if(!found){
+					sem_post(sem_read_count);
+					//ADICIONAR AQUI O QUE FAZER QUANDO TODOS OS AUTHORIZATION ENGINES TIVEREM CHEIOS
 				}
 			}
 		}
@@ -424,31 +452,23 @@ void *sender_function(void *arg){
 }
 
 //---------------Função que escreve nos Unnamed Pipes-------------
-void write_unnamed(int **pipes){
+void write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 	char msg[MAX_STRING_SIZE];
-	char *temp = rem_queue(&q_video, mut_video);
+	char *temp = rem_queue(&q_some, mut);
 	if (temp) {
 		strncpy(msg, temp, MAX_STRING_SIZE);
-		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula
-		free(temp); // Supondo que você deva liberar a memória (depende de como rem_queue() aloca a string)
+		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula 
 	}
 
-	sem_wait(sem_read_count);
-	for(int i=0; i<config.max_auth_servers; i++){
-		if(shared->read_count_shared[i]==0){
-			shared->read_count_shared[i]=1;
-			sem_post(sem_read_count);
-			ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
-			if (num_written == -1) {
-				log_message("ERROR WRITING ON UNNAMED PIPE.");
-				run=0;
-				free_shared();
-				exit(1);
-			}
-			return;
-			
-		}
+	ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
+	printf("---->ACABEI DE ESCREVER NO UNNAMED : %s\n", msg);
+	if (num_written == -1) {
+		log_message("ERROR WRITING ON UNNAMED PIPE.");
+		run=0;
+		free_shared();
+		exit(1);
 	}
+	return;
 }
 
 //###################################################
@@ -460,27 +480,27 @@ void create_autho_engines(){
 	for(int i = 0; i < config.max_auth_servers; i++){
 		autho_engines_pid[i] = fork();
 		if(autho_engines_pid[i] == 0){
-			read_from_unnamed(pipes[i], i);
+			read_from_unnamed(i);
 			exit(0);
 		}
 	}
 }
 
 //-----------------Lê os unnamed pipes através do Authorization Engine-----------
-void read_from_unnamed(int pipes[2], int i){
+void read_from_unnamed(int i){
 	char *message = malloc(sizeof(char)* MAX_STRING_SIZE);
-	close(pipes[1]);
+	close(pipes[i][1]);
 	while(run){//ISTO É CONSIDERADO ESPERA ATIVA??????????????????????????????????????????????????
-		if(read(pipes[0],message, sizeof(message) ) > 0){
+		int n;
+		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
+			message[n]='\0';
+			printf("LI DO UNNAMED PIPE : %s\n", message);
 			sem_wait(sem_read_count);
-			shared->read_count_shared[i] = 1;
+			shared->read_count_shared[i] = 0;		//acabou de ler portanto pomos a 0 denovo
 			sem_post(sem_read_count);
 			manage_auth(message);
 			
 		}
-		sem_wait(sem_read_count);
-		shared->read_count_shared[i] = 0;
-		sem_post(sem_read_count);
 	}
 }
 
@@ -498,26 +518,31 @@ void manage_auth(char *buf){
 	if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
 		sem_wait(sem_userscount);
 		if(shared->mobile_users<config.max_mobile_user){
-			++shared->mobile_users;
-			sem_post(sem_userscount);
+			shared->mobile_users++;
 			addUser(&shared->users,atoi(part1),atoi(part2));
 			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
+			sem_post(sem_login1st);
+			printf("LIBERTEI O SEMAFORO DE PODER DESCONTAR PLAFOND\n");
 		}else{
 			sem_post(sem_userscount);
+			sem_post(sem_login1st);
 			//################################################################################################################################################
 			//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
 			//################################################################################################################################################
 			log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
 		}
+		sem_post(sem_userscount);
 	}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
+		sem_wait(sem_login1st);
 		users_ *user = searchUser(shared->users, atoi(part1));
 		if(user ==NULL){
 			printf("nao foi encontrado o user na shared\n");		//id do user nao existe
 		}else{
 			sem_wait(sem_plafond);
 			user->plafond=user->plafond - atoi(part3);
-			sem_post(sem_plafond);
 			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+			sem_post(sem_plafond);
+			sem_post(sem_login1st);
 		}
 	}else{
 		//################################################################################################################################################
@@ -525,6 +550,7 @@ void manage_auth(char *buf){
 		//################################################################################################################################################
 		log_message("MOBILE USER SENT WRONG PARAMETERS.");
 	}
+	sleep(config.auth_proc_time);
 }
 
 //#####################################################################
@@ -565,7 +591,7 @@ void add_queue(queue **head, const char *message, pthread_mutex_t sem) {
 char *rem_queue(queue **head, pthread_mutex_t sem){
 	pthread_mutex_lock(&sem);
     if (*head == NULL) {
-        fprintf(stderr, "A fila está vazia\n");
+        printf("A fila está vazia\n");
 		pthread_mutex_unlock(&sem);
         return NULL;
     }
@@ -573,10 +599,9 @@ char *rem_queue(queue **head, pthread_mutex_t sem){
     queue *temp = *head;
     static char message[MAX_STRING_SIZE];  // Static para retornar localmente
     strncpy(message, temp->message, MAX_STRING_SIZE);
-
+	printf("RETIREI DA FILA DE ESPERA A STRING : %s \n", message);
     *head = temp->next;
 	pthread_mutex_unlock(&sem);
-    free(temp);
 
     return message;
 }
