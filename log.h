@@ -8,8 +8,8 @@
 #include "system_manager.h"
 
 int log_message(char* message);
-void addUser(users_ **head, int id_, int plaf);
-users_ * searchUser(users_ *head, int id_);
-int removeUser(users_ **head, int id_); 
+void addUser(int id_, int plaf);
+int searchUser(int id_);
+int removeUser(int id_); 
 int verificaS(const char *str);
 #endif

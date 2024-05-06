@@ -46,7 +46,7 @@ void manage_auth(char *buf);
 void add_queue(queue **head, const char *message, pthread_mutex_t sem) ;
 char *rem_queue(queue **head, pthread_mutex_t sem);
 int is_empty(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]);	
-void write_unnamed(queue *q_some, pthread_mutex_t mut, int i);
+queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i);
 void print_queue(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]);
 void process_queue_item(queue **q, pthread_mutex_t mut);
 

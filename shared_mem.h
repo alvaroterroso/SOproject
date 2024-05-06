@@ -33,7 +33,7 @@
 //1-> MANEIRA DE RETIRAR O LIXO DA QUE ENTRA NAS FILAS, TA A CAUSAR O ERRO DO DUPLO FREE
 //2-> O ARRAY QUE TEM A DISPONIBILIDADE DOS PIPES NAO ESTÁ A ESVAZIAR, VER O QUE SE ESTÁ A PASSAR
 //3-> SEMPRE QUE RETIRARMOS PLAFONS, VER QUANTO FALTA PARA ESGOTAR, OU SE JA ESGOTOU, PARA DEPOIS ENVIAR UMA MQ
-
+//4-> controlar o valor maximo de pedidos na fila
 
 typedef struct config_struct{
 	int max_mobile_user;
@@ -55,14 +55,19 @@ typedef struct mobile_user_struct{
 }mobile_user_struct;
 
 //a nossa shared memory
-typedef struct users_{
+/*
+typedef struct users_{//COMENTAR USERS DA SHARED MEM
 	int id;
 	int plafond;
+	int plafond_ini;
 	struct users_ *next;
 }users_;
 
+*/
+
 typedef struct shm{
-	users_ *users;		     //lista dos mobile users criados
+	//users_ *users;		     //lista dos mobile users criados
+	int **user_array; //[pos][id,plafond]
 	int * read_count_shared; //array dos unnamed pipes disponiveis
 	int mobile_users;		 //numero de mobile users registados
 }shm;

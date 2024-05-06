@@ -32,9 +32,7 @@ int main(int argc, char **argv){
 	sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
 	log_mutex= sem_open("mutex", O_CREAT|O_EXCL, 0777,1);
 
-
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
-
 
 	run = 1;
 	//ignore signal while inittilazing 
@@ -170,6 +168,10 @@ void free_shared(){
 	msgctl(mqid, IPC_RMID, 0); //DONE
 	unlink(BACK_PIPE);
 	unlink(USER_PIPE);
+	for(int i = 0; i < config.max_auth_servers; i++){
+		close(pipes[i][0]);
+		close(pipes[i][1]);
+	}
 }
 
 //#########################################################################################
@@ -177,7 +179,9 @@ void free_shared(){
 //#########################################################################################
 void init_prog() {
     // Tamanho da estrutura shm mais o espaço necessário para o array read_count_shared
-    int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * config.max_auth_servers;
+	// A -> NAO SEI SE ESTE MALLOC DOS USERS ESTÁ BEM, MAS ACHO QUE É ESPAÇO SUFICIENTE
+
+    int shm_size = sizeof(int) * config.max_auth_servers + sizeof(int) * sizeof(config.max_mobile_user * sizeof(int) * 2); // A -> ESTE ULTIMO É PARA O ARRAY DE DUAS DIMENSOES
 
     if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 0) {
         log_message("ERROR IN SHMGET");
@@ -191,9 +195,19 @@ void init_prog() {
     }
     log_message("SHARED MEMORY IS ALLOCATED");
 
-	shared->read_count_shared= malloc(sizeof(int) * config.max_auth_servers);
+	// Allocate memory for the 2D array in shared memory
+    shared->user_array = (int **)malloc(config.max_mobile_user * sizeof(int *));
+    for (int i = 0; i < config.max_mobile_user; i++) {
+        shared->user_array[i] = (int *)malloc(3 * sizeof(int));
+    }
+	sem_wait(sem_shared);
+	for(int i = 0; i < config.max_auth_servers; i++){
+		shared->user_array[i][0] = -1;
+	}
+	sem_post(sem_shared);
 
     // Inicializar array read_count_shared diretamente
+	shared->read_count_shared= malloc(sizeof(int) * config.max_auth_servers);
     sem_wait(sem_read_count);
     for (int i = 0; i < config.max_auth_servers; i++) {
         shared->read_count_shared[i] = 0;
@@ -203,7 +217,6 @@ void init_prog() {
     create_msq();
     create_proc();
 }
-
 
 //-------------------Cria em específico a message queue--------------------
 void create_msq(){
@@ -229,6 +242,7 @@ void create_proc(){
 		free_shared();
 		exit(1);
 	}
+	
 	monitor_engine_pid = fork();
 	if(monitor_engine_pid == 0){
 		monitor_engine();
@@ -342,7 +356,6 @@ void *receiver_function(void *arg){
 	log_message("BACK_PIPE FOR READING IS OPEN!");
 
 	printf("VOU COMEÇAR A LER: A ENTRAR NO WHILE\n");
-	fflush(stdout);
 
 	while(1){
 		fd_set read_set;
@@ -375,20 +388,20 @@ void *receiver_function(void *arg){
 
                     if ((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
                         if (strcmp("VIDEO", part2) == 0) {
+							//verificar se chegou ao limite de pedidos na fila
 							add_queue(&q_video, copy, mut_video);
-							printf("MESSAGE ADDED TO VIDEO QUEUE.\n");
-							fflush(stdout);
+							log_message("MESSAGE ADDED TO VIDEO QUEUE.\n");
 							sem_post(sem_controlar);
                         } else {
+							//verificar se chegou ao limite de pedidos na fila
                             add_queue(&q_other, copy, mut_other);
-							printf("MESSAGE ADDED TO OTHERS QUEUE.\n");
-							fflush(stdout);
+							log_message("MESSAGE ADDED TO OTHERS QUEUE.\n");
 							sem_post(sem_controlar);
                         }
                     } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
+						//verificar se chegou ao limite de pedidos na fila
                         add_queue(&q_other, copy, mut_other);
-                        printf("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
-						fflush(stdout);
+                        log_message("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
 						sem_post(sem_controlar);
                     } else {
                         log_message("MOBILE USER SENT WRONG PARAMETERS.");
@@ -442,9 +455,9 @@ void process_queue_item(queue **q, pthread_mutex_t mut) {
     for (int i = 0; i < config.max_auth_servers; i++) {
         if (shared->read_count_shared[i] == 0) {
             shared->read_count_shared[i] = 1;
-            write_unnamed(*q, mut, i);
-            found = true;
 			sem_post(sem_read_count);
+            *q = write_unnamed(*q, mut, i);
+            found = true;
             break;
         }
     }
@@ -455,24 +468,26 @@ void process_queue_item(queue **q, pthread_mutex_t mut) {
 }
 
 //---------------Função que escreve nos Unnamed Pipes-------------
-void write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
+queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
+
 	char msg[MAX_STRING_SIZE];
 	char *temp = rem_queue(&q_some, mut);
+
 	if (temp) {
 		strncpy(msg, temp, MAX_STRING_SIZE);
 		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula 
 	}
-
+	
 	ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
 	printf("ACABEI DE ESCREVER NO UNNAMED : %s\n", msg);
-	fflush(stdout);
+
 	if (num_written == -1) {
 		log_message("ERROR WRITING ON UNNAMED PIPE.");
 		run=0;
 		free_shared();
 		exit(1);
 	}
-	return;
+	return q_some;
 }
 
 //###################################################
@@ -499,7 +514,7 @@ void read_from_unnamed(int i){
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
 			printf("LI DO UNNAMED PIPE : %s\n", message);
-			fflush(stdout);
+
 			sem_wait(sem_read_count);
 			shared->read_count_shared[i] = 0;		//acabou de ler portanto pomos a 0 denovo
 			sem_post(sem_read_count);
@@ -524,7 +539,7 @@ void manage_auth(char *buf){
 		sem_wait(sem_userscount);
 		if(shared->mobile_users<config.max_mobile_user){
 			shared->mobile_users++;
-			addUser(&shared->users,atoi(part1),atoi(part2));
+			addUser(atoi(part1),atoi(part2));
 			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
 		}else{
 			sem_post(sem_userscount);
@@ -535,13 +550,16 @@ void manage_auth(char *buf){
 		}
 		sem_post(sem_userscount);
 	}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
-		users_ *user = searchUser(shared->users, atoi(part1));
-		if(user ==NULL){
-			printf("nao foi encontrado o user na shared\n");		//id do user nao existe
-			fflush(stdout);
+		int user_index = searchUser(atoi(part1));
+		if(user_index == -1){
+			log_message("MOBILE USER NOT FOUND.");
+
 		}else{
 			sem_wait(sem_plafond);
-			user->plafond=user->plafond - atoi(part3);
+			shared->user_array[user_index][1]=shared->user_array[user_index][1] - atoi(part3);
+			//if((user->plafond)/(user->plafond_ini)){
+
+			//}
 			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
 			sem_post(sem_plafond);
 		}
@@ -606,9 +624,7 @@ char *rem_queue(queue **head, pthread_mutex_t sem) {
     // Copy the message from the queue node to the newly allocated memory
     strcpy(message, temp->message);
     *head = temp->next;  // Point the head to the next element
-	temp->next = NULL;
-	temp = NULL;
-    free(temp->message);  // Free the memory of the original head node
+
 	free(temp);
 
     pthread_mutex_unlock(&sem);
@@ -621,7 +637,7 @@ int is_empty(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]){	//1 s
 	pthread_mutex_lock(&sem);
 	if(head==NULL){
 		pthread_mutex_unlock(&sem);
-		//print_queue(head, sem,tipo); 
+		print_queue(head, sem,tipo); 
 		return 1;
 	}else{
 		pthread_mutex_unlock(&sem);
@@ -634,18 +650,14 @@ void print_queue(queue *head, pthread_mutex_t sem, char tipo[MAX_STRING_SIZE]) {
     pthread_mutex_lock(&sem); // Garante acesso exclusivo à fila
     queue *current = head;
     printf("Current Queue [%s]:\n", tipo);
-	fflush(stdout);
     if (current == NULL) {
         printf("The queue is empty.\n");
-		fflush(stdout);
     }
     while (current != NULL) {
         printf("Message: %s\n", current->message);
-		fflush(stdout);
         current = current->next;
     }
 	printf("Fim do print da fila\n");
-	fflush(stdout);
     pthread_mutex_unlock(&sem); // Libera o acesso à fila
 }
 
