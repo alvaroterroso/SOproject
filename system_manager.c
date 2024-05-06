@@ -19,19 +19,22 @@ pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 //Criação dos semaforos necessários  e por dar inicio ao programa
 //####################################################################################
 int main(int argc, char **argv){
-	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
-
 	sem_unlink("shared");
 	sem_unlink("counter");
 	sem_unlink("read_count");
 	sem_unlink("plafond");
 	sem_unlink("control");
+	sem_unlink("mutex");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
-	sem_login1st = sem_open("login",O_CREAT|O_EXCL, 0777,0);
 	sem_plafond = sem_open("plafond",O_CREAT|O_EXCL, 0777,1);
 	sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
+	log_mutex= sem_open("mutex", O_CREAT|O_EXCL, 0777,1);
+
+
+	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
+
 
 	run = 1;
 	//ignore signal while inittilazing 
@@ -63,8 +66,10 @@ int main(int argc, char **argv){
 		log_message("SIMULATOR WAITING FOR LAST TASKS TO FINISH");
 		free_shared();
 	}
-	if(getpid() == system_manager_pid)log_message("5G_AUTH_PLATFORM SIMULATOR CLOSING\n"); //last message
-	pthread_mutex_destroy(&log_mutex);
+	if(getpid() == system_manager_pid){
+		log_message("5G_AUTH_PLATFORM SIMULATOR CLOSING\n");//last message
+		sem_destroy(log_mutex);
+	}
 	return 0;
 }
 
@@ -151,10 +156,8 @@ void free_shared(){
 	sem_destroy(sem_read_count);
 	sem_destroy(sem_plafond);
 	sem_destroy(sem_controlar);
-	sem_destroy(sem_login1st);
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
-	unlink("login");
 	unlink("shared");
 	unlink("counter");
 	unlink("read_count");
@@ -339,6 +342,7 @@ void *receiver_function(void *arg){
 	log_message("BACK_PIPE FOR READING IS OPEN!");
 
 	printf("VOU COMEÇAR A LER: A ENTRAR NO WHILE\n");
+	fflush(stdout);
 
 	while(1){
 		fd_set read_set;
@@ -359,8 +363,6 @@ void *receiver_function(void *arg){
                     strncpy(copy, buf, sizeof(copy) - 1);
                     copy[sizeof(copy) - 1] = '\0';
 
-					printf("String inteira: %s\n",buf);
-
                     char *part1, *part2, *part3;
 					part1 = strtok(buf, "#");
 					if (part1 != NULL) {
@@ -375,15 +377,18 @@ void *receiver_function(void *arg){
                         if (strcmp("VIDEO", part2) == 0) {
 							add_queue(&q_video, copy, mut_video);
 							printf("MESSAGE ADDED TO VIDEO QUEUE.\n");
+							fflush(stdout);
 							sem_post(sem_controlar);
                         } else {
                             add_queue(&q_other, copy, mut_other);
 							printf("MESSAGE ADDED TO OTHERS QUEUE.\n");
+							fflush(stdout);
 							sem_post(sem_controlar);
                         }
                     } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
                         add_queue(&q_other, copy, mut_other);
                         printf("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
+						fflush(stdout);
 						sem_post(sem_controlar);
                     } else {
                         log_message("MOBILE USER SENT WRONG PARAMETERS.");
@@ -413,17 +418,17 @@ void *sender_function(void *arg) {
         sem_wait(sem_controlar);
 
         // Processa a fila de vídeo
-        if (!is_empty(q_video, mut_video)) {
+        if (!is_empty(q_video, mut_video, "VIDEO")) {
             log_message("Checking video queue...");
             videoProcessedCount = 0;
-            while (!is_empty(q_video, mut_video) && videoProcessedCount < MAX_VIDEO_BATCH) {
+            while (!is_empty(q_video, mut_video,"VIDEO") && videoProcessedCount < MAX_VIDEO_BATCH) {
                 process_queue_item(&q_video, mut_video);
                 videoProcessedCount++;
             }
         }
 
         // Processa a fila de "other" a cada ciclo da fila de vídeo
-        if (!is_empty(q_other, mut_other)) {
+        if (!is_empty(q_other, mut_other, "OTHER")) {
             log_message("Checking other queue...");
             process_queue_item(&q_other, mut_other);
         }
@@ -460,6 +465,7 @@ void write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 
 	ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
 	printf("ACABEI DE ESCREVER NO UNNAMED : %s\n", msg);
+	fflush(stdout);
 	if (num_written == -1) {
 		log_message("ERROR WRITING ON UNNAMED PIPE.");
 		run=0;
@@ -493,6 +499,7 @@ void read_from_unnamed(int i){
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
 			printf("LI DO UNNAMED PIPE : %s\n", message);
+			fflush(stdout);
 			sem_wait(sem_read_count);
 			shared->read_count_shared[i] = 0;		//acabou de ler portanto pomos a 0 denovo
 			sem_post(sem_read_count);
@@ -519,11 +526,8 @@ void manage_auth(char *buf){
 			shared->mobile_users++;
 			addUser(&shared->users,atoi(part1),atoi(part2));
 			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
-			sem_post(sem_login1st);
-			printf("LIBERTEI O SEMAFORO DE PODER DESCONTAR PLAFOND\n");
 		}else{
 			sem_post(sem_userscount);
-			sem_post(sem_login1st);
 			//################################################################################################################################################
 			//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
 			//################################################################################################################################################
@@ -531,16 +535,15 @@ void manage_auth(char *buf){
 		}
 		sem_post(sem_userscount);
 	}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
-		sem_wait(sem_login1st);
 		users_ *user = searchUser(shared->users, atoi(part1));
 		if(user ==NULL){
 			printf("nao foi encontrado o user na shared\n");		//id do user nao existe
+			fflush(stdout);
 		}else{
 			sem_wait(sem_plafond);
 			user->plafond=user->plafond - atoi(part3);
 			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
 			sem_post(sem_plafond);
-			sem_post(sem_login1st);
 		}
 	}else{
 		//################################################################################################################################################
@@ -593,41 +596,56 @@ char *rem_queue(queue **head, pthread_mutex_t sem) {
         return NULL;
     }
 
-    queue *temp = *head;
-    char *message = strdup(temp->message); // Use strdup to return a copy of the message.
-    *head = temp->next;
-    free(temp);  // Free the node
-    pthread_mutex_unlock(&sem);
+    queue *temp = *head;  // Point to the head of the queue
+    char *message = malloc(strlen(temp->message) + 1);  // +1 for null terminator
+    if (message == NULL) {
+        pthread_mutex_unlock(&sem);
+        return NULL;  // Handle allocation failure
+    }
 
-    return message;
+    // Copy the message from the queue node to the newly allocated memory
+    strcpy(message, temp->message);
+    *head = temp->next;  // Point the head to the next element
+	temp->next = NULL;
+	temp = NULL;
+    free(temp->message);  // Free the memory of the original head node
+	free(temp);
+
+    pthread_mutex_unlock(&sem);
+    return message;  // Return the duplicated message
 }
 
+
 //----------------Verifica se a Fila está Vazia----------------------
-int is_empty(queue *head, pthread_mutex_t sem) {	//1 se está vazia, 0 tem elementos
+int is_empty(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]){	//1 se está vazia, 0 tem elementos
 	pthread_mutex_lock(&sem);
 	if(head==NULL){
 		pthread_mutex_unlock(&sem);
-		print_queue(head, sem); 
+		//print_queue(head, sem,tipo); 
 		return 1;
 	}else{
 		pthread_mutex_unlock(&sem);
-		print_queue(head, sem); 
+		print_queue(head, sem, tipo); 
 		return 0;
 	}
 }
 
-void print_queue(queue *head, pthread_mutex_t sem) {
+void print_queue(queue *head, pthread_mutex_t sem, char tipo[MAX_STRING_SIZE]) {
     pthread_mutex_lock(&sem); // Garante acesso exclusivo à fila
     queue *current = head;
-    printf("Current Queue:\n");
+    printf("Current Queue [%s]:\n", tipo);
+	fflush(stdout);
     if (current == NULL) {
         printf("The queue is empty.\n");
+		fflush(stdout);
     }
     while (current != NULL) {
         printf("Message: %s\n", current->message);
+		fflush(stdout);
         current = current->next;
     }
 	printf("Fim do print da fila\n");
+	fflush(stdout);
     pthread_mutex_unlock(&sem); // Libera o acesso à fila
 }
 

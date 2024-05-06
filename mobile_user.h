@@ -6,6 +6,7 @@
 #define MAX_SIZE 256
 #include "log.h"
 #include "system_manager.h"
+#include "shared_mem.h"
 //mutex mobile user count
 mobile_user_struct new_mobile_user;
 sem_t *sem_full;

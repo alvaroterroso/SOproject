@@ -7,7 +7,6 @@
 #include <time.h>
 
 //mutex log
-pthread_mutex_t log_mutex= PTHREAD_MUTEX_INITIALIZER; 
 
 // Function to log messages
 int log_message(char* message) {
@@ -21,12 +20,12 @@ int log_message(char* message) {
 																//if not, the time would be affected by the mutex pause
 
 	//Get the mutex to write to the log file
-    pthread_mutex_lock(&log_mutex);
+    sem_wait(log_mutex);
 
     FILE* log_file = fopen(FILENAME, "a");
     if (!log_file) {
         perror("Failed to open log file");
-        pthread_mutex_unlock(&log_mutex);//free mutex to avoid deadlocks
+        sem_post(log_mutex);//free mutex to avoid deadlocks
 		return 1;
         exit(EXIT_FAILURE);
     }
@@ -37,7 +36,7 @@ int log_message(char* message) {
     printf("%s - %s\n", buffer, message);
 
     fclose(log_file);
-    pthread_mutex_unlock(&log_mutex);
+    sem_post(log_mutex);
 	return 0;
 }
 
@@ -52,9 +51,8 @@ void addUser(users_ **head, int id_, int plaf) {
 	sem_wait(sem_shared);
     new_node->next = *head;
     *head = new_node;
-	printf("LOGIN FEITO-> VAMOS VER SE SAI DA FUNÇÃO\n");
 	sem_post(sem_shared);
-	printf("LOGIN FEITO-> SO FALTA O RETURN\n");
+
 	return;
 }
 

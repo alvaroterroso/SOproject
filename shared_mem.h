@@ -75,7 +75,7 @@ sem_t *sem_shared; //semaforo para lidar com a fila da shared memory
 sem_t *sem_userscount; //semaforo para lidar com o usercount da shared memory
 sem_t *sem_read_count; //semaforo para lidar com o read_count da shared memory
 sem_t *sem_login1st;  //ter a certexa que o login ja foi adiconado á shared memory para poder fazer o resto depois
-
+sem_t * log_mutex;
 sem_t *sem_controlar; //semaforo que só deixa a sender verificar se ha mensagens para ler ( só desbloqueia quando alguem envia para a fila)
 
 typedef struct queue{
@@ -110,9 +110,6 @@ pthread_t receiver_thread, sender_thread;
 
 //process
 pid_t auth_request_manager_pid, monitor_engine_pid, system_manager_pid;
-
-//mutex log
-pthread_mutex_t log_mutex; // Extern keyword added here
 
 //criaç
 pid_t *autho_engines_pid;

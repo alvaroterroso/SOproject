@@ -15,7 +15,8 @@ int main(int argc, char **argv){
 		       "<intervalo MUSIC> <intervalo SOCIAL> <dados a reservar>\n");
 		exit(1);
 	}
-	log_message("MOBILE USER IS RUNNING");
+
+	printf("MOBILE USER IS RUNNING\n");
 
 	
 	for(int i = 1; i < 7; i++){
@@ -37,7 +38,7 @@ int main(int argc, char **argv){
 	snprintf(log_msg, sizeof(log_msg), "%d#%d",new_mobile_user.id, new_mobile_user.init_plafond);
 	printf("mensagem mobile: %s\n",log_msg);
 	if((fd_write = open(USER_PIPE, O_WRONLY))<0){
-		log_message("CANNOT OPEN PIPE FOR WRITING");
+		printf("CANNOT OPEN PIPE FOR WRITING\n");
 		clear_resources();
 		exit(1);
 	}
@@ -58,7 +59,7 @@ int main(int argc, char **argv){
         thread->interval = intervalos[i];
         thread->tipo = tipo[i];
 		if (pthread_create(&worker[i], NULL, send_data, thread) != 0){
-			log_message("CANNOT CREATE WORKER THREAD");
+			printf("CANNOT CREATE WORKER THREAD\n");
 			exit(1);
 		}
 	}
