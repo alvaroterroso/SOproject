@@ -21,7 +21,7 @@ typedef struct {
   /* Use the pid as the identifier */
   long id;
   /* Notifications about plafond */
-  char *msg;
+  char msg[MAX_STRING_SIZE];
 } plafond_msg;
 
 int fd_read_user,fd_read_back;

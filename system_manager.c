@@ -536,7 +536,6 @@ void read_from_unnamed(int i){
 			printf("\n");
 			sem_post(sem_read_count);
 			manage_auth(message);
-			
 		}
 	}
 }
@@ -551,7 +550,6 @@ void manage_auth(char *buf){
 	if (part2 != NULL) {
 		part3 = strtok(NULL, "#");
 	}
-
 	if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
 		sem_wait(sem_userscount);
 		if(shared->mobile_users<config.max_mobile_user){
@@ -560,7 +558,6 @@ void manage_auth(char *buf){
 			sem_post(sem_login1st);
 			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
 		}else{
-			sem_post(sem_userscount);
 			//################################################################################################################################################
 			//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
 			//################################################################################################################################################
@@ -572,36 +569,43 @@ void manage_auth(char *buf){
 		int user_index = searchUser(atoi(part1));
 		if(user_index == -1){
 			log_message("MOBILE USER NOT FOUND.");
-
 		}else{
 			sem_wait(sem_plafond);
 			shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
-			printf("PLAFOND ATUAL: %d\n", shared->user_array[user_index].plafond);
+			printf("\nPLAFOND ATUAL: %f\n", shared->user_array[user_index].plafond);
+			sem_post(sem_plafond);
+			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
 			if((1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini)) == 0 ){
+
 				plafond_msg pla;
 				pla.id= (long)shared->user_array->id;
 				strcpy(pla.msg, PLA_100);
 				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
 				printf("ENVIEI MQ\n");
+
 			}else if((1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini)) > 0.9){
+
 				plafond_msg pla;
 				pla.id= (long)shared->user_array->id;
 				strcpy(pla.msg, PLA_90);
+				pla.msg[sizeof(pla.msg) - 1] = '\0';
 				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
 				printf("ENVIEI MQ\n");
+
 			}else if((1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini)) > 0.8){
+
 				plafond_msg pla;
 				pla.id= (long)shared->user_array->id;
 				strcpy(pla.msg, PLA_80);
 				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
 				printf("ENVIEI MQ\n");
+
 			}
 			//FAZER PARTE DE VERIFICAR A PERCENTAGEM DE PLAFOND QUE TEM
 		
-			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-			sem_post(sem_plafond);
 		}
 		sem_post(sem_login1st);
+
 	}else{
 		//################################################################################################################################################
 		//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)

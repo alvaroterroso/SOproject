@@ -58,8 +58,8 @@ typedef struct mobile_user_struct{
 
 typedef struct users_{//COMENTAR USERS DA SHARED MEM
 	int id;
-	int plafond;
-	int plafond_ini;
+	float plafond;
+	float plafond_ini;
 }users_;
 
 
