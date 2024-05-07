@@ -40,102 +40,53 @@ int log_message(char* message) {
 	return 0;
 }
 
+// Função para adicionar um usuário
 void addUser(int id_, int plaf) {
-	/**/	
-	int i = 0;
-	sem_post(sem_shared);
-	while(shared->user_array[i][0] != -1){
-		i++;
-	}
-	shared->user_array[i][0] = id_;
-	shared->user_array[i][1] = plaf;
-	sem_wait(sem_shared);
-	
-	return;
-	// A -> COMENTAR O RESTO
-	/*
-	users_ *new_node = (users_ *)malloc(sizeof(users_));				//NO FIM DO PROGRAMA DAR FREE, OU NS ONDE É MSM :)
-    if (new_node == NULL) {
-        fprintf(stderr, "Erro ao alocar memória\n");
-        return;
+    sem_wait(sem_shared); // Deveria ser sem_wait para esperar antes de acessar
+    int i = 0;
+    while (shared->user_array[i].id != -1 && i < shared->mobile_users) {
+        i++;
     }
-    new_node->plafond = plaf;
-	new_node->plafond_ini = plaf;
-	new_node->id=id_;
-	sem_wait(sem_shared);
-    new_node->next = *head;
-    *head = new_node;
-	sem_post(sem_shared);
-
-	return;
-	*/
-
+    if (i < shared->mobile_users) { // Verifica se ainda há espaço no array
+        shared->user_array[i].id = id_;
+        shared->user_array[i].plafond = plaf;
+        shared->user_array[i].plafond_ini = plaf; // Supondo inicialização do plafond inicial também
+    }
+    sem_post(sem_shared);
 }
 
-int searchUser(int id_) { // A -> har porque é a única forma de passar o id e user na mesma função 
-	sem_wait(sem_shared);
-	int i = 0;
-	while(shared->user_array[i][0] != id_){
-		i++;
-	}
-	if(shared->user_array[i][0] != -1)
-	{
-		return i;
-	}
-	return -1;
-
-	// A-> COMENTAR O RESTO 
-	/*
-	 users_ *current = head;
-    while (current != NULL) {
-        if (current->id == id_) {
-			sem_post(sem_shared);
-            return current;
-        }
-        current = current->next;
+// Função para procurar um usuário pelo ID
+int searchUser(int id_) {
+    sem_wait(sem_shared);
+    int i = 0;
+    while (i < shared->mobile_users && shared->user_array[i].id != id_) {
+        i++;
     }
-	sem_post(sem_shared);
-    return NULL;  // Não encontrado
-	*/
+    sem_post(sem_shared); // Libera o semáforo após o acesso
+    if (i < shared->mobile_users && shared->user_array[i].id != -1) {
+        return i;
+    }
+    return -1;
 }
 
+// Função para remover um usuário
 int removeUser(int id_) {
-	int i = 0;
-	sem_wait(sem_shared);
-	while(shared->user_array[i][0] != id_){
-		i++;
-	}
-	if(shared->user_array[i][0] != -1){
-		shared->user_array[i][0] = -1;
-		shared->user_array[i][1] = 0;
-		return 1;// A -> RETURN 1 IF FOUND
-	} 
-	return 0;// A-> RETURN 0 IF NOT FOUND
-
-	// ############ A -> APAGAR O RESTO PARA BAIXO ...
-
-	/*
-	users_ *current = *head;
-    users_ *previous = NULL;
-
-    while (current != NULL) {
-        if (current->id == id_) {
-            if (previous == NULL) {  // Remover o primeiro nó
-                *head = current->next;
-            } else {  // Remover nó que não é o primeiro
-                previous->next = current->next;
-            }
-            free(current);
-			sem_post(sem_shared);
-            return 1;  // Removido com sucesso
-        }
-        previous = current;
-        current = current->next;
+    sem_wait(sem_shared);
+    int i = 0;
+    while (i < shared->mobile_users && shared->user_array[i].id != id_) {
+        i++;
     }
-	sem_post(sem_shared);
-    return 0;  // Não encontrado
-	*/
+    if (i < shared->mobile_users && shared->user_array[i].id != -1) {
+        shared->user_array[i].id = -1; // Marca o ID como -1 para indicar remoção
+        shared->user_array[i].plafond = -1; // Zera o plafond
+        shared->user_array[i].plafond_ini = -1; // Zera o plafond inicial
+        sem_post(sem_shared);
+        return 1; // Usuário encontrado e removido
+    } 
+    sem_post(sem_shared);
+    return 0; // Usuário não encontrado
 }
+
 
 int verificaS(const char *str) {
     bool contemLetras = false;
@@ -161,4 +112,3 @@ int verificaS(const char *str) {
         return 0; // String vazia ou inválida
     }
 }
-

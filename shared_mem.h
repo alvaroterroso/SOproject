@@ -55,19 +55,17 @@ typedef struct mobile_user_struct{
 }mobile_user_struct;
 
 //a nossa shared memory
-/*
+
 typedef struct users_{//COMENTAR USERS DA SHARED MEM
 	int id;
 	int plafond;
 	int plafond_ini;
-	struct users_ *next;
 }users_;
 
-*/
 
 typedef struct shm{
 	//users_ *users;		     //lista dos mobile users criados
-	int **user_array; //[pos][id,plafond]
+	users_ *user_array; 		//array de users
 	int * read_count_shared; //array dos unnamed pipes disponiveis
 	int mobile_users;		 //numero de mobile users registados
 }shm;

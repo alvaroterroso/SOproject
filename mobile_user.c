@@ -70,6 +70,8 @@ int main(int argc, char **argv){
 	while(1){
 		//only receives messages that belongs to this process
 		msgrcv(mqid,&plafond,sizeof(plafond)-sizeof(long),(long)new_mobile_user.id,0);
+
+		printf("MENSAGEM RECEBIDA: %s\n", plafond.msg);
 		/*
 		
 		Analyse what to do here.
@@ -109,15 +111,13 @@ void *send_data(void* arg) {
         pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
 
         // Prepara a mensagem a ser enviada
-        int nbytes = snprintf(log_msg, sizeof(log_msg), "%d#%s#%d", new_mobile_user.id, thread->tipo, new_mobile_user.to_reserve_data);
-		if (nbytes >= sizeof(log_msg)) {
-			// Indica que a saída foi truncada
-			log_msg[sizeof(log_msg) - 1] = '\0';
-		}
+        snprintf(log_msg, sizeof(log_msg), "%d#%s#%d", new_mobile_user.id, thread->tipo, new_mobile_user.to_reserve_data);
+
         printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
+		fflush(stdout);
 
 		pthread_mutex_lock(&mens_pipe);
-        write(fd_write, log_msg, sizeof(log_msg)); // Envia a mensagem
+        write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
         pthread_mutex_unlock(&mens_pipe); // Libera o semáforo após enviar a mensagem
 
         sleep(thread->interval); // Aguarda pelo intervalo especificado antes de enviar a próxima mensagem

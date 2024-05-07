@@ -11,7 +11,6 @@ VER SE ESTÁ CERTO:
 */
 
 #include "system_manager.h"
-#define MAX_VIDEO_BATCH 3
 pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 
@@ -25,14 +24,18 @@ int main(int argc, char **argv){
 	sem_unlink("plafond");
 	sem_unlink("control");
 	sem_unlink("mutex");
+	sem_unlink("login");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
 	sem_plafond = sem_open("plafond",O_CREAT|O_EXCL, 0777,1);
 	sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
 	log_mutex= sem_open("mutex", O_CREAT|O_EXCL, 0777,1);
+	sem_login1st = sem_open("login",O_CREAT|O_EXCL, 0777,0);
+
 
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
+
 
 	run = 1;
 	//ignore signal while inittilazing 
@@ -154,6 +157,7 @@ void free_shared(){
 	sem_destroy(sem_read_count);
 	sem_destroy(sem_plafond);
 	sem_destroy(sem_controlar);
+	sem_destroy(sem_login1st);
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
 	unlink("shared");
@@ -163,15 +167,12 @@ void free_shared(){
 	unlink("control");
 	unlink("video");
 	unlink("other");
+	unlink("login");
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
 	msgctl(mqid, IPC_RMID, 0); //DONE
 	unlink(BACK_PIPE);
 	unlink(USER_PIPE);
-	for(int i = 0; i < config.max_auth_servers; i++){
-		close(pipes[i][0]);
-		close(pipes[i][1]);
-	}
 }
 
 //#########################################################################################
@@ -179,9 +180,7 @@ void free_shared(){
 //#########################################################################################
 void init_prog() {
     // Tamanho da estrutura shm mais o espaço necessário para o array read_count_shared
-	// A -> NAO SEI SE ESTE MALLOC DOS USERS ESTÁ BEM, MAS ACHO QUE É ESPAÇO SUFICIENTE
-
-    int shm_size = sizeof(int) * config.max_auth_servers + sizeof(int) * sizeof(config.max_mobile_user * sizeof(int) * 2); // A -> ESTE ULTIMO É PARA O ARRAY DE DUAS DIMENSOES
+    int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * config.max_auth_servers;
 
     if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 0) {
         log_message("ERROR IN SHMGET");
@@ -195,28 +194,28 @@ void init_prog() {
     }
     log_message("SHARED MEMORY IS ALLOCATED");
 
-	// Allocate memory for the 2D array in shared memory
-    shared->user_array = (int **)malloc(config.max_mobile_user * sizeof(int *));
+	shared->user_array = (users_ *)((char *)shared + sizeof(shm));
+	shared->read_count_shared = (int *)((char *)shared + sizeof(shm) + sizeof(users_) * config.max_auth_servers);
+
+	//Inicialização do array de users(nao é preciso semaforo aqui porque mais ninguem tem acesso a isto)
+
     for (int i = 0; i < config.max_mobile_user; i++) {
-        shared->user_array[i] = (int *)malloc(3 * sizeof(int));
+        shared->user_array[i].id = -1;  
+        shared->user_array[i].plafond = -1;  
+        shared->user_array[i].plafond_ini = -1;  
     }
-	sem_wait(sem_shared);
-	for(int i = 0; i < config.max_auth_servers; i++){
-		shared->user_array[i][0] = -1;
-	}
-	sem_post(sem_shared);
+
 
     // Inicializar array read_count_shared diretamente
-	shared->read_count_shared= malloc(sizeof(int) * config.max_auth_servers);
-    sem_wait(sem_read_count);
     for (int i = 0; i < config.max_auth_servers; i++) {
         shared->read_count_shared[i] = 0;
     }
-    sem_post(sem_read_count);
+
 
     create_msq();
     create_proc();
 }
+
 
 //-------------------Cria em específico a message queue--------------------
 void create_msq(){
@@ -242,6 +241,7 @@ void create_proc(){
 		free_shared();
 		exit(1);
 	}
+
 	
 	monitor_engine_pid = fork();
 	if(monitor_engine_pid == 0){
@@ -385,24 +385,38 @@ void *receiver_function(void *arg){
 						part3 = strtok(NULL, "#");
 					}
 
+					printf("A LER A STRING\n");
 
                     if ((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
+
                         if (strcmp("VIDEO", part2) == 0) {
-							//verificar se chegou ao limite de pedidos na fila
-							add_queue(&q_video, copy, mut_video);
-							log_message("MESSAGE ADDED TO VIDEO QUEUE.\n");
-							sem_post(sem_controlar);
+							if(countUsers(q_video,mut_video) <= config.queue_slot_number){//ver se chegou ao limite na fila
+								add_queue(&q_video, copy, mut_video);
+
+								log_message("MESSAGE ADDED TO VIDEO QUEUE.");
+								sem_post(sem_controlar);
+							}else{
+								log_message("VIDEO QUEUE IS FULL, DISCARDING...");
+							}
                         } else {
-							//verificar se chegou ao limite de pedidos na fila
-                            add_queue(&q_other, copy, mut_other);
-							log_message("MESSAGE ADDED TO OTHERS QUEUE.\n");
-							sem_post(sem_controlar);
+							if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
+								add_queue(&q_other, copy, mut_other);
+
+								log_message("MESSAGE ADDED TO OTHERS QUEUE.");
+								sem_post(sem_controlar);
+							}else{
+								log_message("OTHER QUEUE IS FULL, DISCARDING...");
+							}
                         }
                     } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
-						//verificar se chegou ao limite de pedidos na fila
-                        add_queue(&q_other, copy, mut_other);
-                        log_message("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
-						sem_post(sem_controlar);
+						if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
+							add_queue(&q_other, copy, mut_other);
+
+							log_message("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
+							sem_post(sem_controlar);
+						}else{
+							log_message("OTHER QUEUE IS FULL, DISCARDING...");
+						}
                     } else {
                         log_message("MOBILE USER SENT WRONG PARAMETERS.");
                     }
@@ -425,24 +439,19 @@ void *receiver_function(void *arg){
 void *sender_function(void *arg) {
     (void)arg;
     log_message("THREAD SENDER CREATED");
-    int videoProcessedCount = 0;
 
     while (run) {
         sem_wait(sem_controlar);
 
         // Processa a fila de vídeo
         if (!is_empty(q_video, mut_video, "VIDEO")) {
-            log_message("Checking video queue...");
-            videoProcessedCount = 0;
-            while (!is_empty(q_video, mut_video,"VIDEO") && videoProcessedCount < MAX_VIDEO_BATCH) {
+            while (!is_empty(q_video, mut_video,"VIDEO")) {
                 process_queue_item(&q_video, mut_video);
-                videoProcessedCount++;
             }
         }
 
         // Processa a fila de "other" a cada ciclo da fila de vídeo
         if (!is_empty(q_other, mut_other, "OTHER")) {
-            log_message("Checking other queue...");
             process_queue_item(&q_other, mut_other);
         }
     }
@@ -450,10 +459,13 @@ void *sender_function(void *arg) {
 }
 
 void process_queue_item(queue **q, pthread_mutex_t mut) {
-    sem_wait(sem_read_count);
     bool found = false;
+	
+	printf("ARRAY DE UNNAMED PIPES, VERIFICAR LIVRES: ");
     for (int i = 0; i < config.max_auth_servers; i++) {
+		printf("%d ",shared->read_count_shared[i]);
         if (shared->read_count_shared[i] == 0) {
+			printf("\n");
             shared->read_count_shared[i] = 1;
 			sem_post(sem_read_count);
             *q = write_unnamed(*q, mut, i);
@@ -516,7 +528,12 @@ void read_from_unnamed(int i){
 			printf("LI DO UNNAMED PIPE : %s\n", message);
 
 			sem_wait(sem_read_count);
+			printf("LIBERTANDO UM ELEMENTO DO ARRAY, O Nº %d\n",i);
 			shared->read_count_shared[i] = 0;		//acabou de ler portanto pomos a 0 denovo
+			for (int i = 0; i < config.max_auth_servers; i++) {
+				printf("%d ",shared->read_count_shared[i]);
+			}
+			printf("\n");
 			sem_post(sem_read_count);
 			manage_auth(message);
 			
@@ -540,6 +557,7 @@ void manage_auth(char *buf){
 		if(shared->mobile_users<config.max_mobile_user){
 			shared->mobile_users++;
 			addUser(atoi(part1),atoi(part2));
+			sem_post(sem_login1st);
 			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
 		}else{
 			sem_post(sem_userscount);
@@ -550,19 +568,40 @@ void manage_auth(char *buf){
 		}
 		sem_post(sem_userscount);
 	}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
+		sem_wait(sem_login1st);
 		int user_index = searchUser(atoi(part1));
 		if(user_index == -1){
 			log_message("MOBILE USER NOT FOUND.");
 
 		}else{
 			sem_wait(sem_plafond);
-			shared->user_array[user_index][1]=shared->user_array[user_index][1] - atoi(part3);
-			//if((user->plafond)/(user->plafond_ini)){
-
-			//}
+			shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
+			printf("PLAFOND ATUAL: %d\n", shared->user_array[user_index].plafond);
+			if((1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini)) == 0 ){
+				plafond_msg pla;
+				pla.id= (long)shared->user_array->id;
+				strcpy(pla.msg, PLA_100);
+				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
+				printf("ENVIEI MQ\n");
+			}else if((1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini)) > 0.9){
+				plafond_msg pla;
+				pla.id= (long)shared->user_array->id;
+				strcpy(pla.msg, PLA_90);
+				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
+				printf("ENVIEI MQ\n");
+			}else if((1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini)) > 0.8){
+				plafond_msg pla;
+				pla.id= (long)shared->user_array->id;
+				strcpy(pla.msg, PLA_80);
+				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
+				printf("ENVIEI MQ\n");
+			}
+			//FAZER PARTE DE VERIFICAR A PERCENTAGEM DE PLAFOND QUE TEM
+		
 			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
 			sem_post(sem_plafond);
 		}
+		sem_post(sem_login1st);
 	}else{
 		//################################################################################################################################################
 		//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
@@ -649,6 +688,7 @@ int is_empty(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]){	//1 s
 void print_queue(queue *head, pthread_mutex_t sem, char tipo[MAX_STRING_SIZE]) {
     pthread_mutex_lock(&sem); // Garante acesso exclusivo à fila
     queue *current = head;
+	
     printf("Current Queue [%s]:\n", tipo);
     if (current == NULL) {
         printf("The queue is empty.\n");
@@ -659,6 +699,20 @@ void print_queue(queue *head, pthread_mutex_t sem, char tipo[MAX_STRING_SIZE]) {
     }
 	printf("Fim do print da fila\n");
     pthread_mutex_unlock(&sem); // Libera o acesso à fila
+}
+
+int countUsers(queue *head, pthread_mutex_t sem) {
+    int count = 0;  // Inicializa contador
+	pthread_mutex_lock(&sem);
+    queue *current = head;  // Começa pelo primeiro nó da fila
+
+    // Percorre a lista até o final
+    while (current != NULL) {
+        count++;  // Incrementa o contador para cada nó encontrado
+        current = current->next;  // Move para o próximo nó
+    }
+	pthread_mutex_unlock(&sem);
+    return count;  // Retorna o número total de nós
 }
 
 
