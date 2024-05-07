@@ -173,6 +173,10 @@ void free_shared(){
 	msgctl(mqid, IPC_RMID, 0); //DONE
 	unlink(BACK_PIPE);
 	unlink(USER_PIPE);
+	for(int i = 0; i < config.max_auth_servers; i ++){
+		close(pipes[i][0]);
+		close(pipes[i][1]);
+	}
 }
 
 //#########################################################################################
@@ -180,7 +184,7 @@ void free_shared(){
 //#########################################################################################
 void init_prog() {
     // Tamanho da estrutura shm mais o espaço necessário para o array read_count_shared
-    int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * config.max_auth_servers;
+    int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * config.max_auth_servers + sizeof(stats_struct);
 
     if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 0) {
         log_message("ERROR IN SHMGET");
@@ -205,17 +209,22 @@ void init_prog() {
         shared->user_array[i].plafond_ini = -1;  
     }
 
-
     // Inicializar array read_count_shared diretamente
     for (int i = 0; i < config.max_auth_servers; i++) {
         shared->read_count_shared[i] = 0;
     }
 
+	// Inicializar struct_stats na message queue
+	shared->stats.total_music = 0;
+	shared->stats.total_video = 0;
+	shared->stats.total_social = 0;
+	shared->stats.music_req = 0;
+	shared->stats.video_req = 0;
+	shared->stats.social_req = 0;
 
     create_msq();
     create_proc();
 }
-
 
 //-------------------Cria em específico a message queue--------------------
 void create_msq(){
@@ -242,7 +251,6 @@ void create_proc(){
 		exit(1);
 	}
 
-	
 	monitor_engine_pid = fork();
 	if(monitor_engine_pid == 0){
 		monitor_engine();
@@ -421,20 +429,24 @@ void *receiver_function(void *arg){
                     }
                 }else	log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
             }
-			/*if(FD_ISSET(fd_read_back,&read_set)){
+			if(FD_ISSET(fd_read_back,&read_set))
+			{
+				//mandar para others_queue
 				char buf[MAX_STRING_SIZE];
-				int n=0;
-				n=read(fd_read_back, buf, MAX_STRING_SIZE);
-				printf("%s\n", buf);
-			}*/
+				int n=read(fd_read_back, buf, MAX_STRING_SIZE);
+				//printf("%s\n", buf);
+				add_queue(&q_other,buf, mut_other);
+				log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
+			}
 		}
-	}		
+	}
 	return NULL;
 }
 
 //################################################################################################################
 //Função que le os dados das filas, priorizando a fila de VIDEO e reencaminha pelos Unnamed Pipes o conteúdo lido
 //################################################################################################################
+
 void *sender_function(void *arg) {
     (void)arg;
     log_message("THREAD SENDER CREATED");
@@ -486,7 +498,8 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 
 	if (temp) {
 		strncpy(msg, temp, MAX_STRING_SIZE);
-		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula 
+		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula
+		printf("%s\n", msg);
 	}
 	
 	ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
@@ -525,6 +538,7 @@ void read_from_unnamed(int i){
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
 			printf("LI DO UNNAMED PIPE : %s\n", message);
+			if(count_char_occurrences(message,'#') == 2)add_stats(message);
 
 			sem_wait(sem_read_count);
 
@@ -538,6 +552,55 @@ void read_from_unnamed(int i){
 }
 
 //---------------Esta função é responsável por tratar os dados lidos dos Unnamed Pipes----------------
+
+void add_stats(char *msg) {
+    printf("MESSAGE TO GO TO ADD_STATS: %s\n", msg);
+    char *token;
+    char service[100] = {0};  // Initialize the buffer to zero
+    int plaf = 0;
+
+    // Get the first token (this is the first field before the first `#`)
+    token = strtok(msg, "#");
+    
+    // Process tokens using a single assignment per loop iteration
+    while (token != NULL) {
+        // Get the second token (service type)
+        token = strtok(NULL, "#");
+        if (token != NULL) {
+            strcpy(service, token);
+        }
+
+        // Get the third token (last field, plaf value)
+        token = strtok(NULL, "#");
+        if (token != NULL) {
+            plaf = atoi(token);
+        }
+		
+        // Break out of the loop to ensure only one iteration happens
+        break;
+    }
+
+    printf("STATS HAVE BEEN UPDATED\n");
+    // Compare the service string and update the corresponding statistics
+    if (strcmp(service, "VIDEO") == 0) {
+        sem_wait(sem_shared);
+        shared->stats.total_video += plaf;
+        shared->stats.video_req += 1;
+        sem_post(sem_shared);
+    } else if (strcmp(service, "MUSIC") == 0) {
+        sem_wait(sem_shared);
+        shared->stats.total_music += plaf;
+        shared->stats.music_req += 1;
+        sem_post(sem_shared);
+    } else if (strcmp(service, "SOCIAL") == 0) {
+        sem_wait(sem_shared);
+        shared->stats.total_social += plaf;
+        shared->stats.social_req += 1;
+        sem_post(sem_shared);
+    }
+}
+
+
 void manage_auth(char *buf){
 	printf("MENSAGEM QUE CHEGOU AO MANAGE_AUTH: %s\n\n",buf);
 	char *part1, *part2, *part3;
@@ -607,7 +670,30 @@ void manage_auth(char *buf){
 		
 		}
 		sem_post(sem_login1st);
-
+	}else if(strcmp(buf, "1#reset") == 0){
+		sem_wait(sem_shared);
+		shared->stats.total_video = 0;
+		shared->stats.total_social = 0;
+		shared->stats.total_music = 0;
+		shared->stats.music_req = 0;
+		shared->stats.video_req = 0;
+		shared->stats.video_req = 0;
+		sem_post(sem_shared);
+		log_message("STATS RESETED!\n");
+	}else if(strcmp(buf, "1#data_stats") == 0){
+		sem_wait(sem_shared);
+		char buff[1024];
+		sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
+		shared->stats.total_video, shared->stats.video_req, shared->stats.total_music, shared->stats.music_req,
+		shared->stats.total_social, shared->stats.social_req);
+		sem_post(sem_shared);
+		//SEND TO MESSAGE QUEUE
+		plafond_msg back_msg;
+		back_msg.id = (long)1;
+		strcpy(back_msg.msg, buf);
+		msgsnd(mqid,&back_msg,sizeof(back_msg)-sizeof(long),0);
+		printf("\nID DO BACKOFFICE QUE ENVIEI MQ: %ld\n", back_msg.id);
+		log_message("STATS SENDED TO BACK_OFFICE\n");
 	}else{
 		//################################################################################################################################################
 		//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)

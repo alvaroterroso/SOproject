@@ -12,4 +12,5 @@ void addUser(int id_, int plaf);
 int searchUser(int id_);
 int removeUser(int id_); 
 int verificaS(const char *str);
+int count_char_occurrences(const char *str, char character);
 #endif

@@ -112,3 +112,14 @@ int verificaS(const char *str) {
         return 0; // String vazia ou inválida
     }
 }
+
+int count_char_occurrences(const char *str, char character) {
+    int count = 0;
+    while (*str) {
+        if (*str == character) {
+            count++;
+        }
+        str++;
+    }
+    return count;
+}

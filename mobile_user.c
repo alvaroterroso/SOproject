@@ -78,7 +78,6 @@ int main(int argc, char **argv){
 		Analyse what to do here.
 
 		PÕR UMA CONDIÇÃO DE, SE RECEBEU UMA MENSAGEM DE 100%, MUDAR A VARIAVEL FULL PARA IGUAL A 1
-
 		
 		*/
 	}
@@ -88,7 +87,6 @@ int main(int argc, char **argv){
 	return 0;
 
 }
-
 
 void clear_resources(){
 	for(int i=0; i<3; i++){//nao deve ser aqui o sitio mas para ja ta

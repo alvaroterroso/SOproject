@@ -62,12 +62,18 @@ typedef struct users_{//COMENTAR USERS DA SHARED MEM
 	float plafond_ini;
 }users_;
 
+typedef struct stats_struct{
+	int total_video, video_req;
+	int total_social, social_req;
+	int total_music, music_req;
+}stats_struct;
 
 typedef struct shm{
 	//users_ *users;		     //lista dos mobile users criados
 	users_ *user_array; 		//array de users
 	int * read_count_shared; //array dos unnamed pipes disponiveis
 	int mobile_users;		 //numero de mobile users registados
+	stats_struct stats;      //stats do backoffice_user
 }shm;
 
 sem_t *sem_plafond; // semaforo para lidar com a a variavel plafond dos user
@@ -85,6 +91,7 @@ typedef struct queue{
 	char message[MAX_STRING_SIZE];
 	struct queue *next;
 }queue;
+
 
 queue *q_video;
 queue *q_other;

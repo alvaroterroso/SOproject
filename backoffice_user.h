@@ -3,7 +3,7 @@
 
 #ifndef backoffice_user
 #define backoffice_user
-
+#include "system_manager.h"
 #include "shared_mem.h"
 #include "log.h"
 #define data "1#data_stats"

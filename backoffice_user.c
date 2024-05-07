@@ -8,15 +8,16 @@
 
 #include "backoffice_user.h"
 int fd_write;
+plafond_msg back_msg_rcv;
 int main(int argc, char **argv){
-	log_message("BACKOFFICE USER IS RUNNING");
+	printf("BACKOFFICE USER IS RUNNING");
 
 	if ((fd_write = open(BACK_PIPE, O_WRONLY)) < 0){
-		log_message("ERROR OPENING PIPE FOR READING!");
+		printf("ERROR OPENING PIPE FOR READING!");
 		exit(1);
 	}
 
-	log_message("PIPE FOR READING IS OPEN!");
+	printf("PIPE FOR WRITTING IS OPEN!");
 	
 	//while para aceitar as coisas
 	while(1){
@@ -30,5 +31,7 @@ int main(int argc, char **argv){
 		}else{
 			printf("Command not accepeted! Usage: <1#data_stats> or <1#reset>\n");
 		}
+		msgrcv(mqid,&back_msg_rcv,sizeof(back_msg_rcv)-sizeof(long),(long)1,0);
+		printf("%s\n", back_msg_rcv.msg);
 	}
 }

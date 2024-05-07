@@ -54,5 +54,6 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i);
 void print_queue(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]);
 void process_queue_item(queue **q, pthread_mutex_t mut);
 int countUsers(queue *head, pthread_mutex_t sem);
+void add_stats(char *msg);
 
 #endif
