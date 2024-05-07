@@ -5,7 +5,6 @@
 int fd_write;
 int full=0;
 
-pthread_mutex_t mens_pipe = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t request_number = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv){
@@ -42,7 +41,8 @@ int main(int argc, char **argv){
 		clear_resources();
 		exit(1);
 	}
-	write(fd_write, log_msg, sizeof(log_msg));
+
+	write(fd_write, log_msg, sizeof(log_msg));//login message
 
 	sem_unlink("full");
 	sem_full = sem_open("full", O_CREAT|O_EXCL, 0777,1); //semaforo pq quem vai utilizar este semaforo tambem é o auth engine que é um processo
@@ -69,6 +69,7 @@ int main(int argc, char **argv){
 	plafond_msg plafond;
 	while(1){
 		//only receives messages that belongs to this process
+		printf("waiting for message queue.\n");
 		msgrcv(mqid,&plafond,sizeof(plafond)-sizeof(long),(long)new_mobile_user.id,0);
 
 		printf("MENSAGEM RECEBIDA: %s\n", plafond.msg);
@@ -81,9 +82,8 @@ int main(int argc, char **argv){
 		
 		*/
 	}
-	for(int i=0; i<3; i++){//nao deve ser aqui o sitio mas para ja ta
-		pthread_join(worker[i],NULL);
-	}
+
+	clear_resources();
 
 	return 0;
 
@@ -91,6 +91,12 @@ int main(int argc, char **argv){
 
 
 void clear_resources(){
+	for(int i=0; i<3; i++){//nao deve ser aqui o sitio mas para ja ta
+		pthread_join(worker[i],NULL);
+	}
+	pthread_mutex_destroy(&request_number);
+	sem_unlink("full");
+	sem_destroy(sem_full);
 
 }
 
@@ -116,9 +122,11 @@ void *send_data(void* arg) {
         printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
 		fflush(stdout);
 
-		pthread_mutex_lock(&mens_pipe);
-        write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
-        pthread_mutex_unlock(&mens_pipe); // Libera o semáforo após enviar a mensagem
+        ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
+
+		if (bytes_written == -1) {
+			printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
+		}
 
         sleep(thread->interval); // Aguarda pelo intervalo especificado antes de enviar a próxima mensagem
     }

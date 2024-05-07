@@ -341,7 +341,6 @@ void *receiver_function(void *arg){
 	log_message("THREAD RECEIVER CREATED");
 
 	if ((fd_read_user= open(USER_PIPE, O_RDONLY | O_NONBLOCK)) < 0){ //opening user for reading
-		printf("%d\n", errno);
 		log_message("ERROR OPENING USER_PIPE FOR READING!");
 		free_shared();
 		exit(1);
@@ -420,7 +419,7 @@ void *receiver_function(void *arg){
                     } else {
                         log_message("MOBILE USER SENT WRONG PARAMETERS.");
                     }
-                }
+                }else	log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
             }
 			/*if(FD_ISSET(fd_read_back,&read_set)){
 				char buf[MAX_STRING_SIZE];
@@ -460,7 +459,7 @@ void *sender_function(void *arg) {
 
 void process_queue_item(queue **q, pthread_mutex_t mut) {
     bool found = false;
-	
+	sem_wait(sem_read_count);
 	printf("ARRAY DE UNNAMED PIPES, VERIFICAR LIVRES: ");
     for (int i = 0; i < config.max_auth_servers; i++) {
 		printf("%d ",shared->read_count_shared[i]);
@@ -519,7 +518,7 @@ void create_autho_engines(){
 
 //-----------------Lê os unnamed pipes através do Authorization Engine-----------
 void read_from_unnamed(int i){
-	char *message = malloc(sizeof(char)* MAX_STRING_SIZE);
+	char message[MAX_STRING_SIZE];
 	close(pipes[i][1]);
 	while(run){//ISTO É CONSIDERADO ESPERA ATIVA??????????????????????????????????????????????????
 		int n;
@@ -528,20 +527,19 @@ void read_from_unnamed(int i){
 			printf("LI DO UNNAMED PIPE : %s\n", message);
 
 			sem_wait(sem_read_count);
-			printf("LIBERTANDO UM ELEMENTO DO ARRAY, O Nº %d\n",i);
+
 			shared->read_count_shared[i] = 0;		//acabou de ler portanto pomos a 0 denovo
-			for (int i = 0; i < config.max_auth_servers; i++) {
-				printf("%d ",shared->read_count_shared[i]);
-			}
-			printf("\n");
+			
 			sem_post(sem_read_count);
+
 			manage_auth(message);
-		}
+		}else	log_message("EROR READING FROM UNNAMED PIPE.");
 	}
 }
 
 //---------------Esta função é responsável por tratar os dados lidos dos Unnamed Pipes----------------
 void manage_auth(char *buf){
+	printf("MENSAGEM QUE CHEGOU AO MANAGE_AUTH: %s\n\n",buf);
 	char *part1, *part2, *part3;
 	part1 = strtok(buf, "#");
 	if (part1 != NULL) {
@@ -572,33 +570,37 @@ void manage_auth(char *buf){
 		}else{
 			sem_wait(sem_plafond);
 			shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
-			printf("\nPLAFOND ATUAL: %f\n", shared->user_array[user_index].plafond);
+
+			if(shared->user_array[user_index].plafond < 0)	shared->user_array[user_index].plafond = 0;
+			
+			float plafond_gasto= (1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini));
+			printf("\nPLAFOND GASTO: %f.3\n", plafond_gasto);
 			sem_post(sem_plafond);
 			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-			if((1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini)) == 0 ){
+			if(plafond_gasto == 1 ){
 
 				plafond_msg pla;
 				pla.id= (long)shared->user_array->id;
 				strcpy(pla.msg, PLA_100);
 				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
-				printf("ENVIEI MQ\n");
+				printf("\nID DO USER QUE ENVIEI MQ: %ld\n", pla.id);
 
-			}else if((1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini)) > 0.9){
+			}else if(plafond_gasto > 0.9){
 
 				plafond_msg pla;
 				pla.id= (long)shared->user_array->id;
 				strcpy(pla.msg, PLA_90);
 				pla.msg[sizeof(pla.msg) - 1] = '\0';
 				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
-				printf("ENVIEI MQ\n");
+				printf("\nID DO USER QUE ENVIEI MQ: %ld\n", pla.id);
 
-			}else if((1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini)) > 0.8){
+			}else if(plafond_gasto > 0.8){
 
 				plafond_msg pla;
 				pla.id= (long)shared->user_array->id;
 				strcpy(pla.msg, PLA_80);
 				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
-				printf("ENVIEI MQ\n");
+				printf("\nID DO USER QUE ENVIEI MQ: %ld\n", pla.id);
 
 			}
 			//FAZER PARTE DE VERIFICAR A PERCENTAGEM DE PLAFOND QUE TEM
