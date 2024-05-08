@@ -13,6 +13,7 @@ VER SE ESTÁ CERTO:
 #include "system_manager.h"
 pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
+pthread_mutex_t mut_monitor = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 
 //####################################################################################
 //Criação dos semaforos necessários  e por dar inicio ao programa
@@ -25,6 +26,9 @@ int main(int argc, char **argv){
 	sem_unlink("control");
 	sem_unlink("mutex");
 	sem_unlink("login");
+	sem_unlink("statics");
+	sem_unlink("monitor");
+	sem_unlink("mq_monitor");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
@@ -32,6 +36,9 @@ int main(int argc, char **argv){
 	sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
 	log_mutex= sem_open("mutex", O_CREAT|O_EXCL, 0777,1);
 	sem_login1st = sem_open("login",O_CREAT|O_EXCL, 0777,0);
+	sem_statics = sem_open("statics",O_CREAT|O_EXCL, 0777,1);
+	sem_monitor = sem_open("monitor",O_CREAT|O_EXCL, 0777,0);
+	mq_monitor = sem_open("mq_monitor",O_CREAT|O_EXCL, 0777,1);
 
 
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
@@ -158,16 +165,20 @@ void free_shared(){
 	sem_destroy(sem_plafond);
 	sem_destroy(sem_controlar);
 	sem_destroy(sem_login1st);
+	sem_destroy(sem_statics);
+	sem_destroy(sem_monitor);
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
-	unlink("shared");
-	unlink("counter");
-	unlink("read_count");
-	unlink("plafond");
-	unlink("control");
-	unlink("video");
-	unlink("other");
-	unlink("login");
+	sem_unlink("statics");
+	sem_unlink("shared");
+	sem_unlink("counter");
+	sem_unlink("read_count");
+	sem_unlink("plafond");
+	sem_unlink("control");
+	sem_unlink("video");
+	sem_unlink("other");
+	sem_unlink("login");
+	sem_unlink("monitor");
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
 	msgctl(mqid, IPC_RMID, 0); //DONE
@@ -363,6 +374,7 @@ void *receiver_function(void *arg){
 	log_message("BACK_PIPE FOR READING IS OPEN!");
 
 	printf("VOU COMEÇAR A LER: A ENTRAR NO WHILE\n");
+	int cont=0;
 
 	while(1){
 		fd_set read_set;
@@ -373,11 +385,13 @@ void *receiver_function(void *arg){
 		int nfds = (fd_read_user > fd_read_back ? fd_read_user : fd_read_back) + 1;
 		if(select(nfds,&read_set,NULL,NULL,NULL)>0){
 			if (FD_ISSET(fd_read_user, &read_set)) {
-
                 char buf[MAX_STRING_SIZE];
                 int n = read(fd_read_user, buf, MAX_STRING_SIZE);
                 if (n > 0) {
-
+					if(buf[0] == '\0')
+						break;
+					printf("LI DO USER\n");
+					cont ++;
                     buf[n] = '\0';
                     char copy[MAX_STRING_SIZE];
                     strncpy(copy, buf, sizeof(copy) - 1);
@@ -392,7 +406,7 @@ void *receiver_function(void *arg){
 						part3 = strtok(NULL, "#");
 					}
 
-					printf("A LER A STRING\n");
+					printf("\n\nRECEBI: %s [%d]\n\n", copy, cont);
 
                     if ((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
 
@@ -437,11 +451,13 @@ void *receiver_function(void *arg){
 				//printf("%s\n", buf);
 				add_queue(&q_other,buf, mut_other);
 				log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
+				sem_post(sem_controlar);
 			}
 		}
 	}
 	return NULL;
 }
+
 
 //################################################################################################################
 //Função que le os dados das filas, priorizando a fila de VIDEO e reencaminha pelos Unnamed Pipes o conteúdo lido
@@ -499,7 +515,6 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 	if (temp) {
 		strncpy(msg, temp, MAX_STRING_SIZE);
 		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula
-		printf("%s\n", msg);
 	}
 	
 	ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
@@ -538,14 +553,18 @@ void read_from_unnamed(int i){
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
 			printf("LI DO UNNAMED PIPE : %s\n", message);
-			if(count_char_occurrences(message,'#') == 2)add_stats(message);
-
+			if(count_char_occurrences(message,'#') == 2){
+				add_stats(message);
+			}
 			sem_wait(sem_read_count);
 
 			shared->read_count_shared[i] = 0;		//acabou de ler portanto pomos a 0 denovo
-			
+			printf("\n\nREPUS O INDICE [%d] DO ARRAY A 0 DENOVO\n",i);
+			for (int i = 0; i < config.max_auth_servers; i++) {
+				printf("%d ",shared->read_count_shared[i]);
+			}
+			printf("\n");
 			sem_post(sem_read_count);
-
 			manage_auth(message);
 		}else	log_message("EROR READING FROM UNNAMED PIPE.");
 	}
@@ -554,55 +573,44 @@ void read_from_unnamed(int i){
 //---------------Esta função é responsável por tratar os dados lidos dos Unnamed Pipes----------------
 
 void add_stats(char *msg) {
-    printf("MESSAGE TO GO TO ADD_STATS: %s\n", msg);
-    char *token;
-    char service[100] = {0};  // Initialize the buffer to zero
+    //printf("MESSAGE TO GO TO ADD_STATS: %s\n", msg);
+	char token[MAX_STRING_SIZE];
+    char service[MAX_STRING_SIZE];  // Initialize the buffer to zero
     int plaf = 0;
+	strcpy(token, msg);
+	char *part1, *part2, *part3;
+	part1 = strtok(token, "#");
+	if (part1 != NULL) {
+		part2 = strtok(NULL, "#");
+	}
+	if (part2 != NULL) {
+		part3 = strtok(NULL, "#");
+	}
 
-    // Get the first token (this is the first field before the first `#`)
-    token = strtok(msg, "#");
-    
-    // Process tokens using a single assignment per loop iteration
-    while (token != NULL) {
-        // Get the second token (service type)
-        token = strtok(NULL, "#");
-        if (token != NULL) {
-            strcpy(service, token);
-        }
+	strcpy(service, part2);
+	plaf = atoi(part3);
 
-        // Get the third token (last field, plaf value)
-        token = strtok(NULL, "#");
-        if (token != NULL) {
-            plaf = atoi(token);
-        }
-		
-        // Break out of the loop to ensure only one iteration happens
-        break;
-    }
 
-    printf("STATS HAVE BEEN UPDATED\n");
+    //printf("STATS HAVE BEEN UPDATED\n");
     // Compare the service string and update the corresponding statistics
+	sem_wait(sem_statics);
     if (strcmp(service, "VIDEO") == 0) {
-        sem_wait(sem_shared);
         shared->stats.total_video += plaf;
         shared->stats.video_req += 1;
-        sem_post(sem_shared);
     } else if (strcmp(service, "MUSIC") == 0) {
-        sem_wait(sem_shared);
         shared->stats.total_music += plaf;
         shared->stats.music_req += 1;
-        sem_post(sem_shared);
     } else if (strcmp(service, "SOCIAL") == 0) {
-        sem_wait(sem_shared);
         shared->stats.total_social += plaf;
         shared->stats.social_req += 1;
-        sem_post(sem_shared);
     }
+	sem_post(sem_statics);
+	printf("\nSTATS HAVE BEEN UPDATED\n");
 }
 
 
 void manage_auth(char *buf){
-	printf("MENSAGEM QUE CHEGOU AO MANAGE_AUTH: %s\n\n",buf);
+
 	char *part1, *part2, *part3;
 	part1 = strtok(buf, "#");
 	if (part1 != NULL) {
@@ -611,6 +619,7 @@ void manage_auth(char *buf){
 	if (part2 != NULL) {
 		part3 = strtok(NULL, "#");
 	}
+	
 	if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
 		sem_wait(sem_userscount);
 		if(shared->mobile_users<config.max_mobile_user){
@@ -637,62 +646,69 @@ void manage_auth(char *buf){
 			if(shared->user_array[user_index].plafond < 0)	shared->user_array[user_index].plafond = 0;
 			
 			float plafond_gasto= (1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini));
-			printf("\nPLAFOND GASTO: %f.3\n", plafond_gasto);
+			printf("\nPLAFOND GASTO: %.3f\n", plafond_gasto);
 			sem_post(sem_plafond);
 			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+
 			if(plafond_gasto == 1 ){
 
-				plafond_msg pla;
-				pla.id= (long)shared->user_array->id;
-				strcpy(pla.msg, PLA_100);
-				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
-				printf("\nID DO USER QUE ENVIEI MQ: %ld\n", pla.id);
+				sem_wait(mq_monitor);
+				monitor.id= (long)shared->user_array->id;
+				strcpy(monitor.msg, PLA_100);
+				monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+				sem_post(mq_monitor);
+				sem_post(sem_monitor);
+				printf("\nLIBEREI O SEMAFORO PARA A MQ\n");
 
 			}else if(plafond_gasto > 0.9){
 
-				plafond_msg pla;
-				pla.id= (long)shared->user_array->id;
-				strcpy(pla.msg, PLA_90);
-				pla.msg[sizeof(pla.msg) - 1] = '\0';
-				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
-				printf("\nID DO USER QUE ENVIEI MQ: %ld\n", pla.id);
+				sem_wait(mq_monitor);
+				monitor.id= (long)shared->user_array->id;
+				strcpy(monitor.msg, PLA_90);
+				monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+				sem_post(mq_monitor);
+				sem_post(sem_monitor);
+				printf("\nLIBEREI O SEMAFORO PARA A MQ\n");
 
 			}else if(plafond_gasto > 0.8){
 
-				plafond_msg pla;
-				pla.id= (long)shared->user_array->id;
-				strcpy(pla.msg, PLA_80);
-				msgsnd(mqid,&pla,sizeof(pla)-sizeof(long),0);
-				printf("\nID DO USER QUE ENVIEI MQ: %ld\n", pla.id);
+				sem_wait(mq_monitor);
+				monitor.id= (long)shared->user_array->id;
+				strcpy(monitor.msg, PLA_80);
+				monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+				sem_post(mq_monitor);
+				sem_post(sem_monitor);
+				printf("\nLIBEREI O SEMAFORO PARA A MQ\n");
 
 			}
 			//FAZER PARTE DE VERIFICAR A PERCENTAGEM DE PLAFOND QUE TEM
 		
 		}
 		sem_post(sem_login1st);
-	}else if(strcmp(buf, "1#reset") == 0){
-		sem_wait(sem_shared);
+	}else if(strcmp(buf,reset) == 0){
+		sem_wait(sem_statics);
 		shared->stats.total_video = 0;
 		shared->stats.total_social = 0;
 		shared->stats.total_music = 0;
 		shared->stats.music_req = 0;
 		shared->stats.video_req = 0;
 		shared->stats.video_req = 0;
-		sem_post(sem_shared);
+		sem_post(sem_statics);
 		log_message("STATS RESETED!\n");
-	}else if(strcmp(buf, "1#data_stats") == 0){
-		sem_wait(sem_shared);
+	}else if(strcmp(buf, data) == 0){
+		sem_wait(sem_statics);
 		char buff[1024];
 		sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
 		shared->stats.total_video, shared->stats.video_req, shared->stats.total_music, shared->stats.music_req,
 		shared->stats.total_social, shared->stats.social_req);
-		sem_post(sem_shared);
+		sem_post(sem_statics);
 		//SEND TO MESSAGE QUEUE
-		plafond_msg back_msg;
-		back_msg.id = (long)1;
-		strcpy(back_msg.msg, buf);
-		msgsnd(mqid,&back_msg,sizeof(back_msg)-sizeof(long),0);
-		printf("\nID DO BACKOFFICE QUE ENVIEI MQ: %ld\n", back_msg.id);
+		sem_wait(mq_monitor);
+		monitor.id = (long)1;
+		strcpy(monitor.msg, buf);
+		sem_post(mq_monitor);
+		sem_post(sem_monitor);
+		//printf("\nID DO BACKOFFICE QUE ENVIEI MQ: %ld\n", back_msg.id);
 		log_message("STATS SENDED TO BACK_OFFICE\n");
 	}else{
 		//################################################################################################################################################
@@ -810,4 +826,9 @@ int countUsers(queue *head, pthread_mutex_t sem) {
 
 void monitor_engine(){
 	log_message("PROCESS MONITOR_ENGINE CREATED");
+	while(1){
+		sem_wait(sem_monitor);
+		printf("\n\nVOU ENVIAR UMA MQ\n\n");
+		msgsnd(mqid,&monitor,sizeof(monitor)-sizeof(long),0);
+	}
 } 

@@ -6,6 +6,7 @@ int fd_write;
 int full=0;
 
 pthread_mutex_t request_number = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t send_messages = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv){
 	if(argc < 7){
@@ -34,6 +35,7 @@ int main(int argc, char **argv){
 	new_mobile_user.id = (int)getpid();
 
 	//register message
+	memset(log_msg,0,sizeof(log_msg));
 	snprintf(log_msg, sizeof(log_msg), "%d#%d",new_mobile_user.id, new_mobile_user.init_plafond);
 	printf("mensagem mobile: %s\n",log_msg);
 	if((fd_write = open(USER_PIPE, O_WRONLY))<0){
@@ -69,10 +71,15 @@ int main(int argc, char **argv){
 	plafond_msg plafond;
 	while(1){
 		//only receives messages that belongs to this process
-		printf("waiting for message queue.\n");
-		msgrcv(mqid,&plafond,sizeof(plafond)-sizeof(long),(long)new_mobile_user.id,0);
+		printf("waiting for message queue.[%d]\n",(int)getpid());
+		if (msgrcv(mqid, &plafond, sizeof(plafond) - sizeof(long), (long)new_mobile_user.id, 0) == -1){ 
+			perror("Error receiving message");
+			// Adicionar tratamento de erro adequado
+		} else {
+			printf("MENSAGEM RECEBIDA: %s\n", plafond.msg);
+			// Processar a mensagem recebida
+		}
 
-		printf("MENSAGEM RECEBIDA: %s\n", plafond.msg);
 		/*
 		
 		Analyse what to do here.
@@ -95,6 +102,7 @@ void clear_resources(){
 	pthread_mutex_destroy(&request_number);
 	sem_unlink("full");
 	sem_destroy(sem_full);
+	pthread_mutex_destroy(&send_messages);
 
 }
 
@@ -103,7 +111,7 @@ void *send_data(void* arg) {
 
     while (1) {
         pthread_mutex_lock(&request_number); // Espera pelo semáforo para manipular o número de requisições
-
+		memset(log_msg,0,sizeof(log_msg));
         // Checa se ainda há requisições e se o sistema não está cheio
         if (new_mobile_user.auth_request_number <= 0 || full == 1) {
             pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições ou se o sistema está cheio
@@ -119,15 +127,16 @@ void *send_data(void* arg) {
 
         printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
 		fflush(stdout);
+		if(log_msg!=NULL){
+			pthread_mutex_lock(&send_messages);
+			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
+			pthread_mutex_unlock(&send_messages);
+			if (bytes_written == -1) {
+				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
+			}
 
-        ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
-
-		if (bytes_written == -1) {
-			printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
+			sleep(thread->interval); // Aguarda pelo intervalo especificado antes de enviar a próxima mensagem
 		}
-
-        sleep(thread->interval); // Aguarda pelo intervalo especificado antes de enviar a próxima mensagem
     }
-
-    return NULL;
+	pthread_exit(NULL);
 }

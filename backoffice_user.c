@@ -18,6 +18,12 @@ int main(int argc, char **argv){
 	}
 
 	printf("PIPE FOR WRITTING IS OPEN!");
+
+	pid_t fork_ = fork();
+	if(fork_==0 ){
+		ler_mq();
+		exit(0);
+	}
 	
 	//while para aceitar as coisas
 	while(1){
@@ -25,13 +31,19 @@ int main(int argc, char **argv){
 		if(strcmp(input, data) == 0){
 			printf("Requesting statistics...\n");
 			write(fd_write, input, sizeof(input)); //write to pipe
+			printf("%s\n", back_msg_rcv.msg);
 		}else if(strcmp(input, reset) == 0){
 			printf("Reseting...\n");
 			write(fd_write, input, sizeof(input)); //write to pipe
 		}else{
 			printf("Command not accepeted! Usage: <1#data_stats> or <1#reset>\n");
 		}
+	}
+}
+
+void ler_mq(){
+	while(1){
 		msgrcv(mqid,&back_msg_rcv,sizeof(back_msg_rcv)-sizeof(long),(long)1,0);
-		printf("%s\n", back_msg_rcv.msg);
+		printf("MENSAGEM RECEBIDA:\n%s",back_msg_rcv.msg);
 	}
 }
