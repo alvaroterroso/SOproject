@@ -8,6 +8,6 @@
 #include "log.h"
 #define data "1#data_stats"
 #define reset "1#reset"
-
+void ler_mq();
 char input[MAX_STRING_SIZE];
 #endif //BACKOFFICE_USER_H

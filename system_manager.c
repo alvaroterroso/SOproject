@@ -14,6 +14,8 @@ VER SE ESTÁ CERTO:
 pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_monitor = PTHREAD_MUTEX_INITIALIZER;   // Definição real
+pthread_mutex_t mut_cond = PTHREAD_MUTEX_INITIALIZER;   // Definição real
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 //####################################################################################
 //Criação dos semaforos necessários  e por dar inicio ao programa
@@ -23,7 +25,7 @@ int main(int argc, char **argv){
 	sem_unlink("counter");
 	sem_unlink("read_count");
 	sem_unlink("plafond");
-	sem_unlink("control");
+	//sem_unlink("control");
 	sem_unlink("mutex");
 	sem_unlink("login");
 	sem_unlink("statics");
@@ -33,7 +35,7 @@ int main(int argc, char **argv){
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
 	sem_plafond = sem_open("plafond",O_CREAT|O_EXCL, 0777,1);
-	sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
+	//sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
 	log_mutex= sem_open("mutex", O_CREAT|O_EXCL, 0777,1);
 	sem_login1st = sem_open("login",O_CREAT|O_EXCL, 0777,0);
 	sem_statics = sem_open("statics",O_CREAT|O_EXCL, 0777,1);
@@ -163,18 +165,19 @@ void free_shared(){
 	sem_destroy(sem_userscount);
 	sem_destroy(sem_read_count);
 	sem_destroy(sem_plafond);
-	sem_destroy(sem_controlar);
+	//sem_destroy(sem_controlar);
 	sem_destroy(sem_login1st);
 	sem_destroy(sem_statics);
 	sem_destroy(sem_monitor);
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
+	pthread_mutex_destroy(&mut_cond);
 	sem_unlink("statics");
 	sem_unlink("shared");
 	sem_unlink("counter");
 	sem_unlink("read_count");
 	sem_unlink("plafond");
-	sem_unlink("control");
+	//sem_unlink("control");
 	sem_unlink("video");
 	sem_unlink("other");
 	sem_unlink("login");
@@ -412,29 +415,34 @@ void *receiver_function(void *arg){
 
                         if (strcmp("VIDEO", part2) == 0) {
 							if(countUsers(q_video,mut_video) <= config.queue_slot_number){//ver se chegou ao limite na fila
+								pthread_mutex_lock(&mut_cond);
 								add_queue(&q_video, copy, mut_video);
+								pthread_cond_signal(&cond);
+								pthread_mutex_unlock(&mut_cond);
 
 								log_message("MESSAGE ADDED TO VIDEO QUEUE.");
-								sem_post(sem_controlar);
 							}else{
 								log_message("VIDEO QUEUE IS FULL, DISCARDING...");
 							}
                         } else {
 							if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
+								pthread_mutex_lock(&mut_cond);
 								add_queue(&q_other, copy, mut_other);
-
+								pthread_cond_signal(&cond);
+								pthread_mutex_unlock(&mut_cond);
 								log_message("MESSAGE ADDED TO OTHERS QUEUE.");
-								sem_post(sem_controlar);
 							}else{
 								log_message("OTHER QUEUE IS FULL, DISCARDING...");
 							}
                         }
                     } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
 						if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
+							pthread_mutex_lock(&mut_cond);
 							add_queue(&q_other, copy, mut_other);
+							pthread_cond_signal(&cond);
+							pthread_mutex_unlock(&mut_cond);
 
 							log_message("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
-							sem_post(sem_controlar);
 						}else{
 							log_message("OTHER QUEUE IS FULL, DISCARDING...");
 						}
@@ -449,9 +457,13 @@ void *receiver_function(void *arg){
 				char buf[MAX_STRING_SIZE];
 				int n=read(fd_read_back, buf, MAX_STRING_SIZE);
 				//printf("%s\n", buf);
-				add_queue(&q_other,buf, mut_other);
-				log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
-				sem_post(sem_controlar);
+				if(n>0){
+					pthread_mutex_lock(&mut_cond);
+					add_queue(&q_other,buf, mut_other);
+					pthread_cond_signal(&cond);
+					pthread_mutex_unlock(&mut_cond);
+					log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
+				}else log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
 			}
 		}
 	}
@@ -468,7 +480,10 @@ void *sender_function(void *arg) {
     log_message("THREAD SENDER CREATED");
 
     while (run) {
-        sem_wait(sem_controlar);
+		pthread_mutex_lock(&mut_cond);
+		while(is_empty(q_video, mut_video, "VIDEO") && is_empty(q_other, mut_other, "OTHER")){
+			pthread_cond_wait(&cond, &mut_cond);
+		}
 
         // Processa a fila de vídeo
         if (!is_empty(q_video, mut_video, "VIDEO")) {
@@ -481,6 +496,7 @@ void *sender_function(void *arg) {
         if (!is_empty(q_other, mut_other, "OTHER")) {
             process_queue_item(&q_other, mut_other);
         }
+		pthread_mutex_unlock(&mut_cond);
     }
     return NULL;
 }
@@ -619,7 +635,7 @@ void manage_auth(char *buf){
 	if (part2 != NULL) {
 		part3 = strtok(NULL, "#");
 	}
-	
+
 	if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
 		sem_wait(sem_userscount);
 		if(shared->mobile_users<config.max_mobile_user){
@@ -784,11 +800,11 @@ int is_empty(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]){	//1 s
 	pthread_mutex_lock(&sem);
 	if(head==NULL){
 		pthread_mutex_unlock(&sem);
-		print_queue(head, sem,tipo); 
+		//print_queue(head, sem,tipo); 
 		return 1;
 	}else{
 		pthread_mutex_unlock(&sem);
-		print_queue(head, sem, tipo); 
+		//print_queue(head, sem, tipo); 
 		return 0;
 	}
 }
