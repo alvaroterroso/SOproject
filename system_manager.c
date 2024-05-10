@@ -25,12 +25,12 @@ int main(int argc, char **argv){
 	sem_unlink("counter");
 	sem_unlink("read_count");
 	sem_unlink("plafond");
-	//sem_unlink("control");
 	sem_unlink("mutex");
 	sem_unlink("login");
 	sem_unlink("statics");
 	sem_unlink("monitor");
 	sem_unlink("mq_monitor");
+	sem_unlink("back");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
@@ -637,7 +637,11 @@ void add_stats(char *msg) {
 //---------------Esta função é responsável por tratar os dados lidos dos Unnamed Pipes----------------
 
 void manage_auth(char *buf){
+	char copia[MAX_STRING_SIZE];
+	strcpy(copia,buf);
 
+
+	printf("copia : %s\nstring : %s\n", copia,data);
 	char *part1, *part2, *part3;
 	part1 = strtok(buf, "#");
 	if (part1 != NULL) {
@@ -672,13 +676,11 @@ void manage_auth(char *buf){
 			
 			sem_post(sem_plafond);
 			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-			printf("\nVOU DAR POST NO MONITOR\n");
 			sem_post(sem_monitor);
-			printf("\n DEI POST NO MONITOR\n");
 		
 		}
 		sem_post(sem_login1st);
-	}else if(strcmp(buf,reset) == 0){
+	}else if(strcmp(copia,reset) == 0){
 		sem_wait(sem_statics);
 		shared->stats.total_video = 0;
 		shared->stats.total_social = 0;
@@ -688,8 +690,10 @@ void manage_auth(char *buf){
 		shared->stats.video_req = 0;
 		sem_post(sem_statics);
 		log_message("STATS RESETED!\n");
-	}else if(strcmp(buf, data) == 0){
+	}else if(strcmp(copia, data) == 0){
+		printf("\n\nVOU DAR POST\n\n");
 		sem_post(sem_back);
+		printf("\n\n DEI POST NO BACK\n\n");
 		log_message("STATS SENDED TO BACK_OFFICE\n");
 	}else{
 		//enviar mq ao mobile user para dizer que está cheio
@@ -837,19 +841,16 @@ void monitor_engine(){
 } 
 
 void *plafond_function(){
-	printf("\n\nDENTRO DA FUNÇÂO PLAFOND FUNCTION\n\n");
+
 	while(1){
-		printf("\n\nA ESPERA DO POST NO SEM MONITOR\n\n");
 		sem_wait(sem_monitor);
-		printf("\nENTREI NO POST NO SEM MONITOR\n");
 		for(int i =0; i<config.max_mobile_user; i++){
-			if(shared->user_array[i].id != -1){
-				printf("\n\nVOU VER QUANTO PLAFOND TEM O USER\n\n");
+			if((shared->user_array[i].id > 1)){
 				plafond_msg monitor;
 				sem_wait(sem_plafond);
 				float plafond_gasto = (1 - (shared->user_array[i].plafond/shared->user_array[i].plafond_ini));
 				sem_post(sem_plafond);
-				snprintf(log_msg, sizeof(log_msg), "\nPLAFOND GASTO: %.3f\n", plafond_gasto);
+				snprintf(log_msg, sizeof(log_msg), "\nPLAFOND GASTO (USER[%d]): %.3f\n",(int) shared->user_array[i].id, plafond_gasto);
         		log_message(log_msg);
 
 				if(plafond_gasto == 1 ){
@@ -882,7 +883,9 @@ void *plafond_function(){
 
 void *statics_function(){
 	while(1){
+		printf("\n\nWAITING FOR POST\n\n");
 		sem_wait(sem_back);
+		printf("\n\n ENTREI NO POST\n\n");
 		sem_wait(sem_statics);
 		char buff[1024];
 		sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
