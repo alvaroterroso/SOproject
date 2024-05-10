@@ -13,6 +13,7 @@ sem_t *sem_full;
 pthread_t worker[3];
 void clear_resources();
 void *send_data(void* arg);
+int get_msg_id();
 
 typedef struct {
     int interval;

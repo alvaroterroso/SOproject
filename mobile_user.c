@@ -6,7 +6,6 @@ int fd_write;
 int full=0;
 
 pthread_mutex_t request_number = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t send_messages = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv){
 	if(argc < 7){
@@ -60,19 +59,20 @@ int main(int argc, char **argv){
         }
         thread->interval = intervalos[i];
         thread->tipo = tipo[i];
-		if (pthread_create(&worker[i], NULL, send_data, thread) != 0){
+		if (pthread_create(&worker[i], NULL, send_data, (void*)thread) != 0){
 			printf("CANNOT CREATE WORKER THREAD\n");
 			exit(1);
 		}
 	}
-	//por aqui um while que espera a variavel de condição mudar, ou seja, que tenha a certeza que o login foi efetuado
-	// a variavel a verificar é =1 para dizer que o login foi bem feito e =2 se for rejeitado
-	mqid = msgget(IPC_PRIVATE,0777);
+
+
+	int mq = get_msg_id();
+	printf("MESSAGE QUEUE ID: %d\n", mq);
 	plafond_msg plafond;
 	while(1){
 		//only receives messages that belongs to this process
 		printf("waiting for message queue.[%d]\n",(int)getpid());
-		if (msgrcv(mqid, &plafond, sizeof(plafond) - sizeof(long), (long)new_mobile_user.id, 0) == -1){ 
+		if (msgrcv(mq, &plafond, sizeof(plafond) - sizeof(long), (long)new_mobile_user.id, 0) == -1){ 
 			perror("Error receiving message");
 			// Adicionar tratamento de erro adequado
 		} else {
@@ -80,13 +80,6 @@ int main(int argc, char **argv){
 			// Processar a mensagem recebida
 		}
 
-		/*
-		
-		Analyse what to do here.
-
-		PÕR UMA CONDIÇÃO DE, SE RECEBEU UMA MENSAGEM DE 100%, MUDAR A VARIAVEL FULL PARA IGUAL A 1
-		
-		*/
 	}
 
 	clear_resources();
@@ -102,7 +95,6 @@ void clear_resources(){
 	pthread_mutex_destroy(&request_number);
 	sem_unlink("full");
 	sem_destroy(sem_full);
-	pthread_mutex_destroy(&send_messages);
 
 }
 
@@ -125,18 +117,30 @@ void *send_data(void* arg) {
         // Prepara a mensagem a ser enviada
         snprintf(log_msg, sizeof(log_msg), "%d#%s#%d", new_mobile_user.id, thread->tipo, new_mobile_user.to_reserve_data);
 
-        printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
 		fflush(stdout);
 		if(log_msg!=NULL){
-			pthread_mutex_lock(&send_messages);
 			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
-			pthread_mutex_unlock(&send_messages);
 			if (bytes_written == -1) {
 				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
-			}
+			}else printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
 
 			sleep(thread->interval); // Aguarda pelo intervalo especificado antes de enviar a próxima mensagem
 		}
     }
-	pthread_exit(NULL);
+	return NULL;
+}
+
+int get_msg_id(){
+    int msqid;
+    FILE *fp = fopen(MSQ_FILE, "r");
+    if (fp == NULL) {
+        perror("Error opening file");
+        exit(1);
+    }
+    if (fscanf(fp, "%d", &msqid) != 1) {
+        perror("Error reading msqid from file");
+        exit(1);
+    }
+    fclose(fp);
+    return msqid;
 }

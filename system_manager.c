@@ -40,7 +40,7 @@ int main(int argc, char **argv){
 	sem_login1st = sem_open("login",O_CREAT|O_EXCL, 0777,0);
 	sem_statics = sem_open("statics",O_CREAT|O_EXCL, 0777,1);
 	sem_monitor = sem_open("monitor",O_CREAT|O_EXCL, 0777,0);
-	mq_monitor = sem_open("mq_monitor",O_CREAT|O_EXCL, 0777,1);
+	sem_back = sem_open("back",O_CREAT|O_EXCL, 0777,0);
 
 
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
@@ -169,9 +169,11 @@ void free_shared(){
 	sem_destroy(sem_login1st);
 	sem_destroy(sem_statics);
 	sem_destroy(sem_monitor);
+	sem_destroy(sem_back);
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
 	pthread_mutex_destroy(&mut_cond);
+	sem_unlink("back");
 	sem_unlink("statics");
 	sem_unlink("shared");
 	sem_unlink("counter");
@@ -248,6 +250,13 @@ void create_msq(){
 		exit(1);
   	}
 	log_message("MESSAGE QUEUE IS ALLOCATED");
+	FILE *fp = fopen(MSQ_FILE, "w");
+	if (fp == NULL) {
+		printf("ERROR OPENING FILE -> MSG_QUEUE_ID\n");
+		exit(1);
+	}
+	fprintf(fp, "%d", mqid);
+	fclose(fp);
 }
 
 //###########################################################
@@ -376,7 +385,6 @@ void *receiver_function(void *arg){
 	}
 	log_message("BACK_PIPE FOR READING IS OPEN!");
 
-	printf("VOU COMEÇAR A LER: A ENTRAR NO WHILE\n");
 	int cont=0;
 
 	while(1){
@@ -484,7 +492,7 @@ void *sender_function(void *arg) {
 		while(is_empty(q_video, mut_video, "VIDEO") && is_empty(q_other, mut_other, "OTHER")){
 			pthread_cond_wait(&cond, &mut_cond);
 		}
-
+		pthread_mutex_unlock(&mut_cond);
         // Processa a fila de vídeo
         if (!is_empty(q_video, mut_video, "VIDEO")) {
             while (!is_empty(q_video, mut_video,"VIDEO")) {
@@ -496,7 +504,7 @@ void *sender_function(void *arg) {
         if (!is_empty(q_other, mut_other, "OTHER")) {
             process_queue_item(&q_other, mut_other);
         }
-		pthread_mutex_unlock(&mut_cond);
+
     }
     return NULL;
 }
@@ -548,7 +556,7 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 //###################################################
 //Cria em específico os Authorization Engines	    
 //###################################################
-void create_autho_engines(){
+void create_autho_engines(){                                           //fazer waitpid no fim!!!!!!!!!!!!!!!!!!!!!!!
 	log_message("AUTHORIZATION_ENGINES PROCESSES BEING CREATED");
 	autho_engines_pid = (pid_t*) malloc(config.max_auth_servers * sizeof(pid_t));
 	for(int i = 0; i < config.max_auth_servers; i++){
@@ -556,6 +564,8 @@ void create_autho_engines(){
 		if(autho_engines_pid[i] == 0){
 			read_from_unnamed(i);
 			exit(0);
+		}else if(autho_engines_pid[i] == -1){
+			log_message("Error creating auth engines proccess.");
 		}
 	}
 }
@@ -575,18 +585,18 @@ void read_from_unnamed(int i){
 			sem_wait(sem_read_count);
 
 			shared->read_count_shared[i] = 0;		//acabou de ler portanto pomos a 0 denovo
-			printf("\n\nREPUS O INDICE [%d] DO ARRAY A 0 DENOVO\n",i);
+			/*printf("\n\nREPUS O INDICE [%d] DO ARRAY A 0 DENOVO\n",i);
 			for (int i = 0; i < config.max_auth_servers; i++) {
 				printf("%d ",shared->read_count_shared[i]);
 			}
 			printf("\n");
+			*/
 			sem_post(sem_read_count);
 			manage_auth(message);
 		}else	log_message("EROR READING FROM UNNAMED PIPE.");
 	}
 }
 
-//---------------Esta função é responsável por tratar os dados lidos dos Unnamed Pipes----------------
 
 void add_stats(char *msg) {
     //printf("MESSAGE TO GO TO ADD_STATS: %s\n", msg);
@@ -621,9 +631,10 @@ void add_stats(char *msg) {
         shared->stats.social_req += 1;
     }
 	sem_post(sem_statics);
-	printf("\nSTATS HAVE BEEN UPDATED\n");
+	//printf("\nSTATS HAVE BEEN UPDATED\n");
 }
 
+//---------------Esta função é responsável por tratar os dados lidos dos Unnamed Pipes----------------
 
 void manage_auth(char *buf){
 
@@ -644,9 +655,7 @@ void manage_auth(char *buf){
 			sem_post(sem_login1st);
 			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
 		}else{
-			//################################################################################################################################################
-			//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
-			//################################################################################################################################################
+			//enviar mq ao mobile user para dizer que está cheio
 			log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
 		}
 		sem_post(sem_userscount);
@@ -661,43 +670,11 @@ void manage_auth(char *buf){
 
 			if(shared->user_array[user_index].plafond < 0)	shared->user_array[user_index].plafond = 0;
 			
-			float plafond_gasto= (1 - (shared->user_array[user_index].plafond/shared->user_array[user_index].plafond_ini));
-			printf("\nPLAFOND GASTO: %.3f\n", plafond_gasto);
 			sem_post(sem_plafond);
 			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-
-			if(plafond_gasto == 1 ){
-
-				sem_wait(mq_monitor);
-				monitor.id= (long)shared->user_array->id;
-				strcpy(monitor.msg, PLA_100);
-				monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-				sem_post(mq_monitor);
-				sem_post(sem_monitor);
-				printf("\nLIBEREI O SEMAFORO PARA A MQ\n");
-
-			}else if(plafond_gasto > 0.9){
-
-				sem_wait(mq_monitor);
-				monitor.id= (long)shared->user_array->id;
-				strcpy(monitor.msg, PLA_90);
-				monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-				sem_post(mq_monitor);
-				sem_post(sem_monitor);
-				printf("\nLIBEREI O SEMAFORO PARA A MQ\n");
-
-			}else if(plafond_gasto > 0.8){
-
-				sem_wait(mq_monitor);
-				monitor.id= (long)shared->user_array->id;
-				strcpy(monitor.msg, PLA_80);
-				monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-				sem_post(mq_monitor);
-				sem_post(sem_monitor);
-				printf("\nLIBEREI O SEMAFORO PARA A MQ\n");
-
-			}
-			//FAZER PARTE DE VERIFICAR A PERCENTAGEM DE PLAFOND QUE TEM
+			printf("\nVOU DAR POST NO MONITOR\n");
+			sem_post(sem_monitor);
+			printf("\n DEI POST NO MONITOR\n");
 		
 		}
 		sem_post(sem_login1st);
@@ -712,24 +689,10 @@ void manage_auth(char *buf){
 		sem_post(sem_statics);
 		log_message("STATS RESETED!\n");
 	}else if(strcmp(buf, data) == 0){
-		sem_wait(sem_statics);
-		char buff[1024];
-		sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
-		shared->stats.total_video, shared->stats.video_req, shared->stats.total_music, shared->stats.music_req,
-		shared->stats.total_social, shared->stats.social_req);
-		sem_post(sem_statics);
-		//SEND TO MESSAGE QUEUE
-		sem_wait(mq_monitor);
-		monitor.id = (long)1;
-		strcpy(monitor.msg, buf);
-		sem_post(mq_monitor);
-		sem_post(sem_monitor);
-		//printf("\nID DO BACKOFFICE QUE ENVIEI MQ: %ld\n", back_msg.id);
+		sem_post(sem_back);
 		log_message("STATS SENDED TO BACK_OFFICE\n");
 	}else{
-		//################################################################################################################################################
-		//temos de enviar algo de modo que o mobile user saiba que nao foi logado e portanto tem de terminar o seu processo(talvez variaveis de condição)
-		//################################################################################################################################################
+		//enviar mq ao mobile user para dizer que está cheio
 		log_message("MOBILE USER SENT WRONG PARAMETERS.");
 	}
 	sleep(config.auth_proc_time);
@@ -839,12 +802,115 @@ int countUsers(queue *head, pthread_mutex_t sem) {
     return count;  // Retorna o número total de nós
 }
 
+//MONITOR ENGINE
 
 void monitor_engine(){
 	log_message("PROCESS MONITOR_ENGINE CREATED");
-	while(1){
-		sem_wait(sem_monitor);
-		printf("\n\nVOU ENVIAR UMA MQ\n\n");
-		msgsnd(mqid,&monitor,sizeof(monitor)-sizeof(long),0);
+	mq = get_msg_id();
+	printf("MESSAGE QUEUE ID: %d\n", mq);
+	if (pthread_create(&mobile_thread, NULL, plafond_function, NULL) != 0)
+	{
+		log_message("CANNOT CREATE SENDER_THREAD");
+		free_shared();
+		exit(1);
 	}
+
+	if (pthread_create(&back_thread, NULL, statics_function, NULL) != 0)
+	{
+		log_message("CANNOT CREATE SENDER_THREAD");
+		free_shared();
+		exit(1);
+	}
+
+	if(pthread_join(receiver_thread, NULL)!= 0){
+		log_message("CANNOT JOIN RECEIVER_THREAD");
+		free_shared();
+		exit(1);
+	}
+
+	if(pthread_join(sender_thread, NULL)!= 0){
+		log_message("CANNOT JOIN SENDER_THREAD");
+		free_shared();
+		exit(1);
+	}
+
 } 
+
+void *plafond_function(){
+	printf("\n\nDENTRO DA FUNÇÂO PLAFOND FUNCTION\n\n");
+	while(1){
+		printf("\n\nA ESPERA DO POST NO SEM MONITOR\n\n");
+		sem_wait(sem_monitor);
+		printf("\nENTREI NO POST NO SEM MONITOR\n");
+		for(int i =0; i<config.max_mobile_user; i++){
+			if(shared->user_array[i].id != -1){
+				printf("\n\nVOU VER QUANTO PLAFOND TEM O USER\n\n");
+				plafond_msg monitor;
+				sem_wait(sem_plafond);
+				float plafond_gasto = (1 - (shared->user_array[i].plafond/shared->user_array[i].plafond_ini));
+				sem_post(sem_plafond);
+				snprintf(log_msg, sizeof(log_msg), "\nPLAFOND GASTO: %.3f\n", plafond_gasto);
+        		log_message(log_msg);
+
+				if(plafond_gasto == 1 ){
+					
+					monitor.id= (long)shared->user_array->id;
+					strcpy(monitor.msg, PLA_100);
+					monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+					msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+
+				}else if(plafond_gasto > 0.9){
+
+					monitor.id= (long)shared->user_array->id;
+					strcpy(monitor.msg, PLA_90);
+					monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+					msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+
+				}else if(plafond_gasto > 0.8){
+
+					monitor.id= (long)shared->user_array->id;
+					strcpy(monitor.msg, PLA_80);
+					monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+					msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+
+				}
+			}
+		}
+	}
+	return NULL;
+}
+
+void *statics_function(){
+	while(1){
+		sem_wait(sem_back);
+		sem_wait(sem_statics);
+		char buff[1024];
+		sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
+		shared->stats.total_video, shared->stats.video_req, shared->stats.total_music, shared->stats.music_req,
+		shared->stats.total_social, shared->stats.social_req);
+		sem_post(sem_statics);
+		plafond_msg monitor;
+		monitor.id=(long)1;
+		strcpy(monitor.msg, buff);
+		monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+		msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+		log_message("STATS SENDED TO BACK_OFFICE\n");
+	}
+	return NULL;
+}
+
+
+int get_msg_id(){
+    int msqid;
+    FILE *fp = fopen(MSQ_FILE, "r");
+    if (fp == NULL) {
+        perror("Error opening file");
+        exit(1);
+    }
+    if (fscanf(fp, "%d", &msqid) != 1) {
+        perror("Error reading msqid from file");
+        exit(1);
+    }
+    fclose(fp);
+    return msqid;
+}

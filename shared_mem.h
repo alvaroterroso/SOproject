@@ -24,16 +24,15 @@
 
 #define USER_PIPE "/tmp/USER_PIPE"
 #define BACK_PIPE "/tmp/BACK_PIPE"
+#define MSQ_FILE "msq_id.txt"
 
 #define MAX_STRING_SIZE 256
 
 #define FILENAME "log.txt"
 
 //TODO
-//1-> MANEIRA DE RETIRAR O LIXO DA QUE ENTRA NAS FILAS, TA A CAUSAR O ERRO DO DUPLO FREE
-//2-> O ARRAY QUE TEM A DISPONIBILIDADE DOS PIPES NAO ESTÁ A ESVAZIAR, VER O QUE SE ESTÁ A PASSAR
-//3-> SEMPRE QUE RETIRARMOS PLAFONS, VER QUANTO FALTA PARA ESGOTAR, OU SE JA ESGOTOU, PARA DEPOIS ENVIAR UMA MQ
-//4-> controlar o valor maximo de pedidos na fila
+//1-> ARRANJAR A MQ
+//2-> OUTRA MANEIRA DE ENVIAR OS DADOS PELO USER PIPE
 
 typedef struct config_struct{
 	int max_mobile_user;
@@ -76,7 +75,7 @@ typedef struct shm{
 	stats_struct stats;      //stats do backoffice_user
 }shm;
 
-sem_t *sem_plafond; // semaforo para lidar com a a variavel plafond dos user
+sem_t *sem_plafond; // semaforo para lidar com a shared memory
 
 shm *shared; 
 
@@ -88,7 +87,7 @@ sem_t * log_mutex;
 //sem_t *sem_controlar; //semaforo que só deixa a sender verificar se ha mensagens para ler ( só desbloqueia quando alguem envia para a fila)
 sem_t *sem_statics;	 //alterar o valor das estatisticas
 sem_t *sem_monitor; //aletar o monitor quando tiver mensagens para ler
-sem_t *mq_monitor; //altearar o conteudo da mensagem a enviar para a mq
+sem_t *sem_back; //altearar o conteudo da mensagem a enviar para a mq
 
 typedef struct queue{
 	char message[MAX_STRING_SIZE];
@@ -119,7 +118,7 @@ char log_msg[MAX_STRING_SIZE]; // fazer antes malloc para dar free no fim, so ai
 config_struct config;
 
 //threads
-pthread_t receiver_thread, sender_thread;
+pthread_t receiver_thread, sender_thread, mobile_thread, back_thread; 
 
 //process
 pid_t auth_request_manager_pid, monitor_engine_pid, system_manager_pid;

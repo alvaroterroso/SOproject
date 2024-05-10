@@ -13,6 +13,8 @@
 #define PLA_80 "ALERT 80%% TRIGGERED"
 #define PLA_90 "ALERT 90%% TRIGGERED"
 #define PLA_100 "ALERT 100%% TRIGGERED, REMOVING USER"
+#define MOB_FULL "MOBILE USER´S LIST IS FULL, OR WRONG PARAMETHERS, CLOSING"
+
 //identifier of message queue
 int mqid;
 //arranjar maneira de por esta variavel -> config.max_mobile_user
@@ -24,8 +26,8 @@ typedef struct {
   char msg[MAX_STRING_SIZE];
 } plafond_msg;
 
-plafond_msg monitor;
 
+int mq;
 
 int fd_read_user,fd_read_back;
 
@@ -58,5 +60,7 @@ void print_queue(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]);
 void process_queue_item(queue **q, pthread_mutex_t mut);
 int countUsers(queue *head, pthread_mutex_t sem);
 void add_stats(char *msg);
-
+int get_msg_id();
+void *statics_function();
+void *plafond_function();
 #endif
