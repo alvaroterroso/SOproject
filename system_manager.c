@@ -401,7 +401,7 @@ void *receiver_function(void *arg){
                 if (n > 0) {
 					if(buf[0] == '\0')
 						break;
-					printf("LI DO USER\n");
+
 					cont ++;
                     buf[n] = '\0';
                     char copy[MAX_STRING_SIZE];
@@ -812,24 +812,24 @@ void monitor_engine(){
 	{
 		log_message("CANNOT CREATE SENDER_THREAD");
 		free_shared();
-		exit(1);
+		exit(0);
 	}
 
 	if (pthread_create(&back_thread, NULL, statics_function, NULL) != 0)
 	{
-		log_message("CANNOT CREATE SENDER_THREAD");
+		log_message("CANNOT CREATE BACK_THREAD");
+		free_shared();
+		exit(0);
+	}
+
+	if(pthread_join(mobile_thread, NULL)!= 0){
+		log_message("CANNOT JOIN MOBILE THREAD");
 		free_shared();
 		exit(1);
 	}
 
-	if(pthread_join(receiver_thread, NULL)!= 0){
-		log_message("CANNOT JOIN RECEIVER_THREAD");
-		free_shared();
-		exit(1);
-	}
-
-	if(pthread_join(sender_thread, NULL)!= 0){
-		log_message("CANNOT JOIN SENDER_THREAD");
+	if(pthread_join(back_thread, NULL)!= 0){
+		log_message("CANNOT JOIN BACK THREAD");
 		free_shared();
 		exit(1);
 	}
