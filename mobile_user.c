@@ -3,9 +3,10 @@
 
 #include "mobile_user.h"
 int fd_write;
-int full=0;
+
 
 pthread_mutex_t request_number = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t contorl_write = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv){
 	if(argc < 7){
@@ -32,6 +33,10 @@ int main(int argc, char **argv){
 	new_mobile_user.social_interval = atoi(argv[5]);
 	new_mobile_user.to_reserve_data = atoi(argv[6]);
 	new_mobile_user.id = (int)getpid();
+
+	signal(SIGINT, signal_handler);//HANDLE CTRL-C
+
+	full=0;
 
 	//register message
 	memset(log_msg,0,sizeof(log_msg));
@@ -90,12 +95,19 @@ int main(int argc, char **argv){
 
 void clear_resources(){
 	for(int i=0; i<3; i++){//nao deve ser aqui o sitio mas para ja ta
+		pthread_cancel(worker[i]);
 		pthread_join(worker[i],NULL);
 	}
 	pthread_mutex_destroy(&request_number);
+	pthread_mutex_destroy(&contorl_write);
 	sem_unlink("full");
 	sem_destroy(sem_full);
 
+}
+
+void signal_handler(){
+	clear_resources();
+	exit(0);
 }
 
 void *send_data(void* arg) {
@@ -119,11 +131,12 @@ void *send_data(void* arg) {
 
 		fflush(stdout);
 		if(log_msg!=NULL){
+			pthread_mutex_lock(&contorl_write);
 			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
 			if (bytes_written == -1) {
 				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
 			}else printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
-
+			pthread_mutex_unlock(&contorl_write);
 			sleep(thread->interval); // Aguarda pelo intervalo especificado antes de enviar a próxima mensagem
 		}
     }

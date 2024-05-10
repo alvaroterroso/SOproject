@@ -8,42 +8,59 @@
 
 #include "backoffice_user.h"
 int fd_write;
+int mq;
 plafond_msg back_msg_rcv;
 int main(int argc, char **argv){
-	printf("BACKOFFICE USER IS RUNNING");
+    printf("BACKOFFICE USER IS RUNNING\n");
 
-	if ((fd_write = open(BACK_PIPE, O_WRONLY)) < 0){
-		printf("ERROR OPENING PIPE FOR READING!");
-		exit(1);
-	}
+    if ((fd_write = open(BACK_PIPE, O_WRONLY)) < 0){
+        printf("ERROR OPENING PIPE FOR READING!");
+        exit(1);
+    }
 
-	printf("PIPE FOR WRITTING IS OPEN!");
-
-	pid_t fork_ = fork();
-	if(fork_==0 ){
-		ler_mq();
-		exit(0);
-	}
-	
-	//while para aceitar as coisas
-	while(1){
-		scanf("%s", input);
-		if(strcmp(input, data) == 0){
-			printf("Requesting statistics...\n");
-			write(fd_write, input, sizeof(input)); //write to pipe
-			printf("%s\n", back_msg_rcv.msg);
-		}else if(strcmp(input, reset) == 0){
-			printf("Reseting...\n");
-			write(fd_write, input, sizeof(input)); //write to pipe
-		}else{
-			printf("Command not accepeted! Usage: <1#data_stats> or <1#reset>\n");
-		}
-	}
+    printf("PIPE FOR WRITTING IS OPEN!\n");
+    mq = get_msg_id();
+    pid_t fork_ = fork();
+    if(fork_==0){
+        printf("in\n");
+        ler_mq();
+        exit(0);
+    }
+    
+    //while para aceitar as coisas
+    while(1){
+        scanf("%s", input);
+        if(strcmp(input, data) == 0){
+            printf("Requesting statistics...\n");
+            write(fd_write, input, sizeof(input)); //write to pipe
+            printf("%s\n", back_msg_rcv.msg);
+        }else if(strcmp(input, reset) == 0){
+            printf("Reseting...\n");
+            write(fd_write, input, sizeof(input)); //write to pipe
+        }else{
+            printf("Command not accepeted! Usage: <1#data_stats> or <1#reset>\n");
+        }
+    }
 }
 
 void ler_mq(){
-	while(1){
-		msgrcv(mqid,&back_msg_rcv,sizeof(back_msg_rcv)-sizeof(long),(long)1,0);
-		printf("MENSAGEM RECEBIDA:\n%s",back_msg_rcv.msg);
-	}
+    while(1){
+        msgrcv(mq,&back_msg_rcv,sizeof(back_msg_rcv)-sizeof(long),(long)1,0);
+        printf("MENSAGEM RECEBIDA:\n%s",back_msg_rcv.msg);
+    }
+}
+
+int get_msg_id(){
+    int msqid;
+    FILE *fp = fopen(MSQ_FILE, "r");
+    if (fp == NULL) {
+        perror("Error opening file");
+        exit(1);
+    }
+    if (fscanf(fp, "%d", &msqid) != 1) {
+        perror("Error reading msqid from file");
+        exit(1);
+    }
+    fclose(fp);
+    return msqid;
 }

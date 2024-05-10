@@ -26,7 +26,6 @@ int main(int argc, char **argv){
 	sem_unlink("read_count");
 	sem_unlink("plafond");
 	sem_unlink("mutex");
-	sem_unlink("login");
 	sem_unlink("statics");
 	sem_unlink("monitor");
 	sem_unlink("mq_monitor");
@@ -37,7 +36,6 @@ int main(int argc, char **argv){
 	sem_plafond = sem_open("plafond",O_CREAT|O_EXCL, 0777,1);
 	//sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
 	log_mutex= sem_open("mutex", O_CREAT|O_EXCL, 0777,1);
-	sem_login1st = sem_open("login",O_CREAT|O_EXCL, 0777,0);
 	sem_statics = sem_open("statics",O_CREAT|O_EXCL, 0777,1);
 	sem_monitor = sem_open("monitor",O_CREAT|O_EXCL, 0777,0);
 	sem_back = sem_open("back",O_CREAT|O_EXCL, 0777,0);
@@ -165,8 +163,6 @@ void free_shared(){
 	sem_destroy(sem_userscount);
 	sem_destroy(sem_read_count);
 	sem_destroy(sem_plafond);
-	//sem_destroy(sem_controlar);
-	sem_destroy(sem_login1st);
 	sem_destroy(sem_statics);
 	sem_destroy(sem_monitor);
 	sem_destroy(sem_back);
@@ -179,10 +175,8 @@ void free_shared(){
 	sem_unlink("counter");
 	sem_unlink("read_count");
 	sem_unlink("plafond");
-	//sem_unlink("control");
 	sem_unlink("video");
 	sem_unlink("other");
-	sem_unlink("login");
 	sem_unlink("monitor");
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
@@ -371,14 +365,14 @@ void *receiver_function(void *arg){
 	(void)arg;
 	log_message("THREAD RECEIVER CREATED");
 
-	if ((fd_read_user= open(USER_PIPE, O_RDONLY | O_NONBLOCK)) < 0){ //opening user for reading
+	if ((fd_read_user= open(USER_PIPE, O_RDWR)) < 0){ //opening user for reading
 		log_message("ERROR OPENING USER_PIPE FOR READING!");
 		free_shared();
 		exit(1);
 	}
 	log_message("USER_PIPE FOR READING IS OPEN!");
 
-	if ((fd_read_back= open(BACK_PIPE, O_RDONLY| O_NONBLOCK)) < 0){//opening user for reading
+	if ((fd_read_back= open(BACK_PIPE,  O_RDWR)) < 0){//opening user for reading
 		log_message("ERROR OPENING BACK_PIPE FOR READING!");
 		free_shared();
 		exit(1);
@@ -568,13 +562,16 @@ void create_autho_engines(){                                           //fazer w
 			log_message("Error creating auth engines proccess.");
 		}
 	}
+	for(int i = 0; i < config.max_auth_servers; i++){
+		waitpid(autho_engines_pid[i], NULL, 0);
+	}
 }
 
 //-----------------Lê os unnamed pipes através do Authorization Engine-----------
 void read_from_unnamed(int i){
 	char message[MAX_STRING_SIZE];
 	close(pipes[i][1]);
-	while(run){//ISTO É CONSIDERADO ESPERA ATIVA??????????????????????????????????????????????????
+	while(run){
 		int n;
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
@@ -637,69 +634,76 @@ void add_stats(char *msg) {
 //---------------Esta função é responsável por tratar os dados lidos dos Unnamed Pipes----------------
 
 void manage_auth(char *buf){
-	char copia[MAX_STRING_SIZE];
-	strcpy(copia,buf);
+    char copia[MAX_STRING_SIZE];
+    strcpy(copia,buf);
 
+    //printf("copia : %s\nstring : %s\n", copia,data);
+    char *part1, *part2, *part3;
+    part1 = strtok(buf, "#");
+    if (part1 != NULL) {
+        part2 = strtok(NULL, "#");
+    }
+    if (part2 != NULL) {
+        part3 = strtok(NULL, "#");
+    }
+    //printf("PASSOU OS STRTOKS\n");
+    //printf("parte1: %s, parte2:%s, parte3:%s\n", part1, part2, part3);
+    if(part3 == NULL)printf("PARTE 3 É NULA\n");
+    if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
+        //printf("hello3\n");
+        sem_wait(sem_userscount);
+        if(shared->mobile_users<config.max_mobile_user){
+            shared->mobile_users++;
+            addUser(atoi(part1),atoi(part2));
+            log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
+        }else{
+            //enviar mq ao mobile user para dizer que está cheio
+            log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
+        }
+        sem_post(sem_userscount);
+    }else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
+        //printf("hello2\n");
+        int user_index = searchUser(atoi(part1));
+        if(user_index == -1){
+            log_message("MOBILE USER NOT FOUND.");
+        }else{
+            sem_wait(sem_plafond);
+            shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
 
-	printf("copia : %s\nstring : %s\n", copia,data);
-	char *part1, *part2, *part3;
-	part1 = strtok(buf, "#");
-	if (part1 != NULL) {
-		part2 = strtok(NULL, "#");
-	}
-	if (part2 != NULL) {
-		part3 = strtok(NULL, "#");
-	}
-
-	if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
-		sem_wait(sem_userscount);
-		if(shared->mobile_users<config.max_mobile_user){
-			shared->mobile_users++;
-			addUser(atoi(part1),atoi(part2));
-			sem_post(sem_login1st);
-			log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
-		}else{
-			//enviar mq ao mobile user para dizer que está cheio
-			log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
-		}
-		sem_post(sem_userscount);
-	}else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
-		sem_wait(sem_login1st);
-		int user_index = searchUser(atoi(part1));
-		if(user_index == -1){
-			log_message("MOBILE USER NOT FOUND.");
-		}else{
-			sem_wait(sem_plafond);
-			shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
-
-			if(shared->user_array[user_index].plafond < 0)	shared->user_array[user_index].plafond = 0;
-			
-			sem_post(sem_plafond);
-			log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-			sem_post(sem_monitor);
-		
-		}
-		sem_post(sem_login1st);
-	}else if(strcmp(copia,reset) == 0){
-		sem_wait(sem_statics);
-		shared->stats.total_video = 0;
-		shared->stats.total_social = 0;
-		shared->stats.total_music = 0;
-		shared->stats.music_req = 0;
-		shared->stats.video_req = 0;
-		shared->stats.video_req = 0;
-		sem_post(sem_statics);
-		log_message("STATS RESETED!\n");
-	}else if(strcmp(copia, data) == 0){
-		printf("\n\nVOU DAR POST\n\n");
-		sem_post(sem_back);
-		printf("\n\n DEI POST NO BACK\n\n");
-		log_message("STATS SENDED TO BACK_OFFICE\n");
-	}else{
-		//enviar mq ao mobile user para dizer que está cheio
-		log_message("MOBILE USER SENT WRONG PARAMETERS.");
-	}
-	sleep(config.auth_proc_time);
+            if(shared->user_array[user_index].plafond < 0)  shared->user_array[user_index].plafond = 0;
+            
+            sem_post(sem_plafond);
+            log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+            sem_post(sem_monitor);
+        
+        }
+    }else if(atoi(part1) == 1) { // mensagem do BACK_OFFICE
+        //printf("IN\n");
+        if(strcmp(part2, "reset") == 0){
+            //printf("hello4\n");
+            sem_wait(sem_statics);
+            shared->stats.total_video = 0;
+            shared->stats.total_social = 0;
+            shared->stats.total_music = 0;
+            shared->stats.music_req = 0;
+            shared->stats.video_req = 0;
+            shared->stats.video_req = 0;
+            sem_post(sem_statics);
+            log_message("STATS RESETED!\n");
+        }else{
+            //printf("hello5\n");
+            printf("\n\nVOU DAR POST\n\n");
+            sem_post(sem_back);
+            printf("\n\n DEI POST NO BACK\n\n");
+            log_message("STATS SENDED TO BACK_OFFICE\n");
+        }
+    }else{
+        //printf("ENTREI NO ELSE \n");
+        //enviar mq ao mobile user para dizer que está cheio
+        log_message("MOBILE USER SENT WRONG PARAMETERS.");
+    }
+    printf("NAO ENTREI EM NENHUMA CONDIÇÃO\n");
+    sleep(config.auth_proc_time);
 }
 
 //#####################################################################
@@ -718,12 +722,12 @@ void add_queue(queue **head, const char *message, pthread_mutex_t sem) {
     newNode->message[MAX_STRING_SIZE - 1] = '\0';  // Garantir terminação nula
     newNode->next = NULL;
 
-	pthread_mutex_lock(&sem);
+    pthread_mutex_lock(&sem);
     if (*head == NULL) {
         // Se a fila está vazia, o novo nó se torna o cabeçalho
         *head = newNode;
-		pthread_mutex_unlock(&sem);
-		return;
+        pthread_mutex_unlock(&sem);
+        return;
     } else {
         // Caso contrário, encontrar o último nó
         queue *current = *head;
@@ -731,8 +735,8 @@ void add_queue(queue **head, const char *message, pthread_mutex_t sem) {
             current = current->next;
         }
         current->next = newNode;
-		pthread_mutex_unlock(&sem);
-		return;
+        pthread_mutex_unlock(&sem);
+        return;
     }
 }
 
@@ -755,7 +759,7 @@ char *rem_queue(queue **head, pthread_mutex_t sem) {
     strcpy(message, temp->message);
     *head = temp->next;  // Point the head to the next element
 
-	free(temp);
+    free(temp);
 
     pthread_mutex_unlock(&sem);
     return message;  // Return the duplicated message
@@ -763,23 +767,23 @@ char *rem_queue(queue **head, pthread_mutex_t sem) {
 
 
 //----------------Verifica se a Fila está Vazia----------------------
-int is_empty(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]){	//1 se está vazia, 0 tem elementos
-	pthread_mutex_lock(&sem);
-	if(head==NULL){
-		pthread_mutex_unlock(&sem);
-		//print_queue(head, sem,tipo); 
-		return 1;
-	}else{
-		pthread_mutex_unlock(&sem);
-		//print_queue(head, sem, tipo); 
-		return 0;
-	}
+int is_empty(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]){  //1 se está vazia, 0 tem elementos
+    pthread_mutex_lock(&sem);
+    if(head==NULL){
+        pthread_mutex_unlock(&sem);
+        //print_queue(head, sem,tipo); 
+        return 1;
+    }else{
+        pthread_mutex_unlock(&sem);
+        //print_queue(head, sem, tipo); 
+        return 0;
+    }
 }
 
 void print_queue(queue *head, pthread_mutex_t sem, char tipo[MAX_STRING_SIZE]) {
     pthread_mutex_lock(&sem); // Garante acesso exclusivo à fila
     queue *current = head;
-	
+    
     printf("Current Queue [%s]:\n", tipo);
     if (current == NULL) {
         printf("The queue is empty.\n");
@@ -788,13 +792,13 @@ void print_queue(queue *head, pthread_mutex_t sem, char tipo[MAX_STRING_SIZE]) {
         printf("Message: %s\n", current->message);
         current = current->next;
     }
-	printf("Fim do print da fila\n");
+    printf("Fim do print da fila\n");
     pthread_mutex_unlock(&sem); // Libera o acesso à fila
 }
 
 int countUsers(queue *head, pthread_mutex_t sem) {
     int count = 0;  // Inicializa contador
-	pthread_mutex_lock(&sem);
+    pthread_mutex_lock(&sem);
     queue *current = head;  // Começa pelo primeiro nó da fila
 
     // Percorre a lista até o final
@@ -802,106 +806,104 @@ int countUsers(queue *head, pthread_mutex_t sem) {
         count++;  // Incrementa o contador para cada nó encontrado
         current = current->next;  // Move para o próximo nó
     }
-	pthread_mutex_unlock(&sem);
+    pthread_mutex_unlock(&sem);
     return count;  // Retorna o número total de nós
 }
 
 //MONITOR ENGINE
 
 void monitor_engine(){
-	log_message("PROCESS MONITOR_ENGINE CREATED");
-	mq = get_msg_id();
-	printf("MESSAGE QUEUE ID: %d\n", mq);
-	if (pthread_create(&mobile_thread, NULL, plafond_function, NULL) != 0)
-	{
-		log_message("CANNOT CREATE SENDER_THREAD");
-		free_shared();
-		exit(0);
-	}
+    log_message("PROCESS MONITOR_ENGINE CREATED");
+    mq = get_msg_id();
+    printf("MESSAGE QUEUE ID: %d\n", mq);
+    if (pthread_create(&mobile_thread, NULL, plafond_function, NULL) != 0)
+    {
+        log_message("CANNOT CREATE SENDER_THREAD");
+        free_shared();
+        exit(0);
+    }
 
-	if (pthread_create(&back_thread, NULL, statics_function, NULL) != 0)
-	{
-		log_message("CANNOT CREATE BACK_THREAD");
-		free_shared();
-		exit(0);
-	}
+    if (pthread_create(&back_thread, NULL, statics_function, NULL) != 0)
+    {
+        log_message("CANNOT CREATE BACK_THREAD");
+        free_shared();
+        exit(0);
+    }
 
-	if(pthread_join(mobile_thread, NULL)!= 0){
-		log_message("CANNOT JOIN MOBILE THREAD");
-		free_shared();
-		exit(1);
-	}
+    if(pthread_join(mobile_thread, NULL)!= 0){
+        log_message("CANNOT JOIN MOBILE THREAD");
+        free_shared();
+        exit(1);
+    }
 
-	if(pthread_join(back_thread, NULL)!= 0){
-		log_message("CANNOT JOIN BACK THREAD");
-		free_shared();
-		exit(1);
-	}
+    if(pthread_join(back_thread, NULL)!= 0){
+        log_message("CANNOT JOIN BACK THREAD");
+        free_shared();
+        exit(1);
+    }
 
 } 
 
 void *plafond_function(){
 
-	while(1){
-		sem_wait(sem_monitor);
-		for(int i =0; i<config.max_mobile_user; i++){
-			if((shared->user_array[i].id > 1)){
-				plafond_msg monitor;
-				sem_wait(sem_plafond);
-				float plafond_gasto = (1 - (shared->user_array[i].plafond/shared->user_array[i].plafond_ini));
-				sem_post(sem_plafond);
-				snprintf(log_msg, sizeof(log_msg), "\nPLAFOND GASTO (USER[%d]): %.3f\n",(int) shared->user_array[i].id, plafond_gasto);
-        		log_message(log_msg);
+    while(1){
+        sem_wait(sem_monitor);
+        for(int i =0; i<config.max_mobile_user; i++){
+            if((shared->user_array[i].id > 1)){
+                plafond_msg monitor;
+                sem_wait(sem_plafond);
+                float plafond_gasto = (1 - (shared->user_array[i].plafond/shared->user_array[i].plafond_ini));
+                sem_post(sem_plafond);
+                snprintf(log_msg, sizeof(log_msg), "\nPLAFOND GASTO (USER[%d]): %.3f\n",(int) shared->user_array[i].id, plafond_gasto);
+                log_message(log_msg);
 
-				if(plafond_gasto == 1 ){
-					
-					monitor.id= (long)shared->user_array->id;
-					strcpy(monitor.msg, PLA_100);
-					monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-					msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+                if(plafond_gasto == 1 ){
+                    
+                    monitor.id= (long)shared->user_array->id;
+                    strcpy(monitor.msg, PLA_100);
+                    monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+                    msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 
-				}else if(plafond_gasto > 0.9){
+                }else if(plafond_gasto > 0.9){
 
-					monitor.id= (long)shared->user_array->id;
-					strcpy(monitor.msg, PLA_90);
-					monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-					msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+                    monitor.id= (long)shared->user_array->id;
+                    strcpy(monitor.msg, PLA_90);
+                    monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+                    msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 
-				}else if(plafond_gasto > 0.8){
+                }else if(plafond_gasto > 0.8){
 
-					monitor.id= (long)shared->user_array->id;
-					strcpy(monitor.msg, PLA_80);
-					monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-					msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+                    monitor.id= (long)shared->user_array->id;
+                    strcpy(monitor.msg, PLA_80);
+                    monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+                    msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 
-				}
-			}
-		}
-	}
-	return NULL;
+                }
+            }
+        }
+    }
+    return NULL;
 }
 
 void *statics_function(){
-	while(1){
-		printf("\n\nWAITING FOR POST\n\n");
-		sem_wait(sem_back);
-		printf("\n\n ENTREI NO POST\n\n");
-		sem_wait(sem_statics);
-		char buff[1024];
-		sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
-		shared->stats.total_video, shared->stats.video_req, shared->stats.total_music, shared->stats.music_req,
-		shared->stats.total_social, shared->stats.social_req);
-		sem_post(sem_statics);
-		plafond_msg monitor;
-		monitor.id=(long)1;
-		strcpy(monitor.msg, buff);
-		monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-		msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-		log_message("STATS SENDED TO BACK_OFFICE\n");
-	}
-	return NULL;
+    while(run){
+        printf("\n\nWAITING FOR POST\n\n");
+        sem_wait(sem_back);
+        printf("\n\n ENTREI NO POST\n\n");
+        sem_wait(sem_statics);
+        char buff[1024];
+        sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
+        shared->stats.total_video, shared->stats.video_req, shared->stats.total_music, shared->stats.music_req,
+        shared->stats.total_social, shared->stats.social_req);
+        sem_post(sem_statics);
+        plafond_msg monitor;
+        monitor.id=(long)1;
+        strcpy(monitor.msg, buff);
+        monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+        msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+    }
+    return NULL;
 }
-
 
 int get_msg_id(){
     int msqid;

@@ -17,27 +17,27 @@ int log_message(char* message) {
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);//fetch current time for more accurate output
-																//if not, the time would be affected by the mutex pause
+                                                                //if not, the time would be affected by the mutex pause
 
-	//Get the mutex to write to the log file
+    //Get the mutex to write to the log file
     sem_wait(log_mutex);
 
     FILE* log_file = fopen(FILENAME, "a");
     if (!log_file) {
         perror("Failed to open log file");
         sem_post(log_mutex);//free mutex to avoid deadlocks
-		return 1;
+        return 1;
         exit(EXIT_FAILURE);
     }
 
-	//Writes message with timestamp captured on the top
+    //Writes message with timestamp captured on the top
     fprintf(log_file, "%s - %s\n", buffer, message);
     //Also prints on the console
     printf("%s - %s\n", buffer, message);
 
     fclose(log_file);
     sem_post(log_mutex);
-	return 0;
+    return 0;
 }
 
 // Função para adicionar um usuário
@@ -89,6 +89,8 @@ int removeUser(int id_) {
 
 
 int verificaS(const char *str) {
+    if(str == NULL)return 0;
+    //printf("in -> ");
     bool contemLetras = false;
     bool contemNumeros = false;
 
@@ -103,12 +105,16 @@ int verificaS(const char *str) {
 
     // Retorna o código correspondente ao tipo de string
     if (contemLetras && contemNumeros) {
+        //printf("%s E ENTREI NO RETURN 3\n", str);
         return 3; // Contém letras e números
     } else if (contemLetras) {
+        //printf("%s E ENTREI NO RETURN 1\n", str);
         return 1; // Contém apenas letras
     } else if (contemNumeros) {
+        //printf("%s E ENTREI NO RETURN 2\n", str);
         return 2; // Contém apenas números
     } else {
+        //printf("%s E ENTREI NO RETURN 0\n", str);
         return 0; // String vazia ou inválida
     }
 }

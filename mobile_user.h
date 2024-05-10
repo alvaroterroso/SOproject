@@ -20,6 +20,7 @@ typedef struct {
     char *tipo;
 } ThreadArg;
 
+
 #endif
 
 
