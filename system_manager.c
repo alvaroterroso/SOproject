@@ -194,7 +194,7 @@ void free_shared(){
 //#########################################################################################
 void init_prog() {
     // Tamanho da estrutura shm mais o espaço necessário para o array read_count_shared
-    int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * config.max_auth_servers + sizeof(stats_struct);
+    int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * (config.max_auth_servers +1) + sizeof(stats_struct);
 
     if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 0) {
         log_message("ERROR IN SHMGET");
@@ -338,13 +338,13 @@ void create_pipes(char * named){
 
 //------------------Cria em especifico os unnammed pipess-------------------
 void create_unnamed_pipes(){
-    pipes = malloc(config.max_auth_servers * sizeof(int*));
+    pipes = malloc((config.max_auth_servers + 1)* sizeof(int*));
     if (pipes == NULL) {
         perror("Falha na alocação de memória para pipes");
         exit(EXIT_FAILURE);
     }
 
-    for (int i = 0; i < config.max_auth_servers; i++) {
+    for (int i = 0; i < config.max_auth_servers + 1; i++) {
         pipes[i] = malloc(2 * sizeof(int)); // Cada sub-array contém dois inteiros
         if (pipes[i] == NULL) {
             perror("Falha na alocação de memória para sub-array de pipes");
@@ -678,9 +678,9 @@ void manage_auth(char *buf){
         
         }
     }else if(atoi(part1) == 1) { // mensagem do BACK_OFFICE
-        //printf("IN\n");
+
         if(strcmp(part2, "reset") == 0){
-            //printf("hello4\n");
+
             sem_wait(sem_statics);
             shared->stats.total_video = 0;
             shared->stats.total_social = 0;
