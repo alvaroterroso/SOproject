@@ -9,7 +9,6 @@
 #include "shared_mem.h"
 //mutex mobile user count
 mobile_user_struct new_mobile_user;
-sem_t *sem_full;
 pthread_t worker[3];
 void clear_resources();
 void *send_data(void* arg);

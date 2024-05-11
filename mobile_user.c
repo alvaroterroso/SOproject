@@ -36,7 +36,7 @@ int main(int argc, char **argv){
 
 	signal(SIGINT, signal_handler);//HANDLE CTRL-C
 
-	full=0;
+	run=1;
 
 	//register message
 	memset(log_msg,0,sizeof(log_msg));
@@ -49,9 +49,6 @@ int main(int argc, char **argv){
 	}
 
 	write(fd_write, log_msg, sizeof(log_msg));//login message
-
-	sem_unlink("full");
-	sem_full = sem_open("full", O_CREAT|O_EXCL, 0777,1); //semaforo pq quem vai utilizar este semaforo tambem é o auth engine que é um processo
 	
 	int intervalos[3] = {new_mobile_user.video_interval, new_mobile_user.music_interval, new_mobile_user.social_interval};
 	char *tipo[3] = {"VIDEO", "MUSIC", "SOCIAL"};
@@ -81,9 +78,9 @@ int main(int argc, char **argv){
 			clear_resources();
 			exit(0);
 		} else {
-			if(strcmp(plafond.msg, PLA_80) || strcmp(plafond.msg, PLA_90)){
+			if(strcmp(plafond.msg, PLA_80)==0 || strcmp(plafond.msg, PLA_90)==0){
 				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
-			}else if(strcmp(plafond.msg, PLA_100) || strcmp(plafond.msg, MOB_FULL)){
+			}else if(strcmp(plafond.msg, PLA_100)==0 || strcmp(plafond.msg, MOB_FULL) == 0){
 				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
 				clear_resources();
 				exit(0);
@@ -97,14 +94,13 @@ int main(int argc, char **argv){
 }
 
 void clear_resources(){
-	for(int i=0; i<3; i++){//nao deve ser aqui o sitio mas para ja ta
+	run=0;
+	for(int i=0; i<3; i++){
 		pthread_cancel(worker[i]);
 		pthread_join(worker[i],NULL);
 	}
 	pthread_mutex_destroy(&request_number);
 	pthread_mutex_destroy(&contorl_write);
-	sem_unlink("full");
-	sem_destroy(sem_full);
 
 }
 
@@ -116,11 +112,11 @@ void signal_handler(){
 void *send_data(void* arg) {
     ThreadArg *thread = (ThreadArg*) arg;
 
-    while (1) {
+    while (run) {
         pthread_mutex_lock(&request_number); // Espera pelo semáforo para manipular o número de requisições
 		memset(log_msg,0,sizeof(log_msg));
         // Checa se ainda há requisições e se o sistema não está cheio
-        if (new_mobile_user.auth_request_number <= 0 || full == 1) {
+        if (new_mobile_user.auth_request_number <= 0) {
             pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições ou se o sistema está cheio
             break; // Sai do loop se não há mais requisições ou se o sistema está cheio
         }
