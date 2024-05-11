@@ -31,8 +31,12 @@
 #define FILENAME "log.txt"
 
 //TODO
-//1-> ARRANJAR A MQ
-//2-> OUTRA MANEIRA DE ENVIAR OS DADOS PELO USER PIPE
+//1-> Lidar com as mensagens lidas na mq no  mobile user
+//2-> Fazer a cena de dividir as strings quando tamos a ler no USER PIPE
+//3-> Ver melhor as funções de fechar po sistema, ter a certeza que tamos a fechar todos os processos e assim
+//4-> FAZER A CENA DE ARRANJAR UM PIPE EXTRA
+//5-> VER SE FAÇO AQUILO DE SO ESPERAR UM TEMPO X NA FILA
+//6-> ARRANJAR MANEIRA DE ENVIAR PELA MQ QUE O UTILIZADOR NAO CONSEGUIU LOGAR(CASO ACONTEÇa)
 
 typedef struct config_struct{
 	int max_mobile_user;

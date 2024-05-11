@@ -72,22 +72,25 @@ int main(int argc, char **argv){
 
 
 	int mq = get_msg_id();
-	printf("MESSAGE QUEUE ID: %d\n", mq);
+
 	plafond_msg plafond;
 	while(1){
-		//only receives messages that belongs to this process
-		printf("waiting for message queue.[%d]\n",(int)getpid());
+
 		if (msgrcv(mq, &plafond, sizeof(plafond) - sizeof(long), (long)new_mobile_user.id, 0) == -1){ 
-			perror("Error receiving message");
-			// Adicionar tratamento de erro adequado
+			printf("System Manager Closing...");
+			clear_resources();
+			exit(0);
 		} else {
-			printf("MENSAGEM RECEBIDA: %s\n", plafond.msg);
-			// Processar a mensagem recebida
+			if(strcmp(plafond.msg, PLA_80) || strcmp(plafond.msg, PLA_90)){
+				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
+			}else if(strcmp(plafond.msg, PLA_100) || strcmp(plafond.msg, MOB_FULL)){
+				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
+				clear_resources();
+				exit(0);
+			}
 		}
 
 	}
-
-	clear_resources();
 
 	return 0;
 

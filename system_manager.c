@@ -47,11 +47,9 @@ int main(int argc, char **argv){
 	run = 1;
 	//ignore signal while inittilazing 
 
-	/*
 	signal(SIGINT, SIG_IGN);
 	signal(SIGTSTP, SIG_IGN);
 	signal(SIGUSR1, SIG_IGN);
- 	*/
 
 	system_manager_pid = getpid();
 
@@ -64,11 +62,7 @@ int main(int argc, char **argv){
 	strcpy(filename, argv[1]);
 	if(!validate_config(filename)) exit(0);
 
-	//int pipes[config.max_auth_servers][2];// [0,0,0,0,0,0,0,0] -> [1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0] -> [0,1,0,0,0,0,0,0] -> [1,1,0,0,0,0,0,0]
-	//ESTA LINHA NAO É PRECISA PORQUE DECLAREI NO.H E NO CREATE UNNAMED EU JA FAÇO ISSO DIREITO
 	init_prog();
-
-	signal(SIGINT, signal_handler);//HANDLE CTRL-C
 
 	if(getpid() == system_manager_pid){
 		log_message("SIMULATOR WAITING FOR LAST TASKS TO FINISH");
@@ -222,7 +216,10 @@ void init_prog() {
     // Inicializar array read_count_shared diretamente
     for (int i = 0; i < config.max_auth_servers; i++) {
         shared->read_count_shared[i] = 0;
+		log_message("AUTHORIZATION ENGINE %d READY");
     }
+
+	signal(SIGINT, signal_handler);//HANDLE CTRL-C
 
 	// Inicializar struct_stats na message queue
 	shared->stats.total_music = 0;
@@ -347,8 +344,9 @@ void create_unnamed_pipes(){
     for (int i = 0; i < config.max_auth_servers + 1; i++) {
         pipes[i] = malloc(2 * sizeof(int)); // Cada sub-array contém dois inteiros
         if (pipes[i] == NULL) {
-            perror("Falha na alocação de memória para sub-array de pipes");
-            exit(EXIT_FAILURE);
+            log_message("Falha na alocação de memória para sub-array de pipes");
+			free_shared();
+			exit(1);
         }
 
         if (pipe(pipes[i]) == -1) { // Criando o pipe
@@ -432,7 +430,8 @@ void *receiver_function(void *arg){
 								add_queue(&q_other, copy, mut_other);
 								pthread_cond_signal(&cond);
 								pthread_mutex_unlock(&mut_cond);
-								log_message("MESSAGE ADDED TO OTHERS QUEUE.");
+								snprintf(log_msg, sizeof(log_msg), "MESSAGE ADDED TO OTHERS QUEUE.(%s)",part2);
+                				log_message(log_msg);
 							}else{
 								log_message("OTHER QUEUE IS FULL, DISCARDING...");
 							}
@@ -506,11 +505,8 @@ void *sender_function(void *arg) {
 void process_queue_item(queue **q, pthread_mutex_t mut) {
     bool found = false;
 	sem_wait(sem_read_count);
-	printf("ARRAY DE UNNAMED PIPES, VERIFICAR LIVRES: ");
     for (int i = 0; i < config.max_auth_servers; i++) {
-		printf("%d ",shared->read_count_shared[i]);
         if (shared->read_count_shared[i] == 0) {
-			printf("\n");
             shared->read_count_shared[i] = 1;
 			sem_post(sem_read_count);
             *q = write_unnamed(*q, mut, i);
@@ -534,15 +530,28 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 		strncpy(msg, temp, MAX_STRING_SIZE);
 		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula
 	}
+
+	char *part1, *part2, *part3;
+	part1 = strtok(temp, "#");
+	if (part1 != NULL) {
+		part2 = strtok(NULL, "#");
+	}
+	if (part2 != NULL) {
+		part3 = strtok(NULL, "#");
+	}
 	
 	ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
-	printf("ACABEI DE ESCREVER NO UNNAMED : %s\n", msg);
-
 	if (num_written == -1) {
 		log_message("ERROR WRITING ON UNNAMED PIPE.");
 		run=0;
 		free_shared();
 		exit(1);
+	}else if(part3!=NULL){
+		snprintf(log_msg, sizeof(log_msg),"SENDER: %s AUTHORIZATION REGUEST (ID = %d) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", part2, atoi(part1), i);
+        log_message(log_msg);
+	}else{
+		snprintf(log_msg, sizeof(log_msg),"SENDER: LOGIN AUTHORIZATION REGUEST (ID = %d) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", atoi(part1), i);
+        log_message(log_msg);
 	}
 	return q_some;
 }
@@ -575,19 +584,15 @@ void read_from_unnamed(int i){
 		int n;
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
-			printf("LI DO UNNAMED PIPE : %s\n", message);
+			
+			snprintf(log_msg, sizeof(log_msg),"READ FROM UNNAMED: %s\n",message);
+        	log_message(log_msg);	
 			if(count_char_occurrences(message,'#') == 2){
 				add_stats(message);
 			}
 			sem_wait(sem_read_count);
 
-			shared->read_count_shared[i] = 0;		//acabou de ler portanto pomos a 0 denovo
-			/*printf("\n\nREPUS O INDICE [%d] DO ARRAY A 0 DENOVO\n",i);
-			for (int i = 0; i < config.max_auth_servers; i++) {
-				printf("%d ",shared->read_count_shared[i]);
-			}
-			printf("\n");
-			*/
+			shared->read_count_shared[i] = 0;		
 			sem_post(sem_read_count);
 			manage_auth(message);
 		}else	log_message("EROR READING FROM UNNAMED PIPE.");
@@ -637,7 +642,6 @@ void manage_auth(char *buf){
     char copia[MAX_STRING_SIZE];
     strcpy(copia,buf);
 
-    //printf("copia : %s\nstring : %s\n", copia,data);
     char *part1, *part2, *part3;
     part1 = strtok(buf, "#");
     if (part1 != NULL) {
@@ -646,34 +650,32 @@ void manage_auth(char *buf){
     if (part2 != NULL) {
         part3 = strtok(NULL, "#");
     }
-    //printf("PASSOU OS STRTOKS\n");
-    //printf("parte1: %s, parte2:%s, parte3:%s\n", part1, part2, part3);
-    if(part3 == NULL)printf("PARTE 3 É NULA\n");
     if(verificaS(part1)==2 && verificaS(part2)==2 && part3==NULL){ //login
-        //printf("hello3\n");
         sem_wait(sem_userscount);
+
         if(shared->mobile_users<config.max_mobile_user){
             shared->mobile_users++;
             addUser(atoi(part1),atoi(part2));
             log_message("MOBILE USER ADDED TO SHARED MEMORY SUCCESSEFULLY.");
+
         }else{
             //enviar mq ao mobile user para dizer que está cheio
             log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
         }
         sem_post(sem_userscount);
     }else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
-        //printf("hello2\n");
         int user_index = searchUser(atoi(part1));
         if(user_index == -1){
             log_message("MOBILE USER NOT FOUND.");
         }else{
+			printf("\n\n------VOU RETIRAR PLAFOND-------\n\n");
             sem_wait(sem_plafond);
             shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
 
             if(shared->user_array[user_index].plafond < 0)  shared->user_array[user_index].plafond = 0;
-            
             sem_post(sem_plafond);
             log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+			log_message(log_msg);
             sem_post(sem_monitor);
         
         }
@@ -691,10 +693,7 @@ void manage_auth(char *buf){
             sem_post(sem_statics);
             log_message("STATS RESETED!\n");
         }else{
-            //printf("hello5\n");
-            printf("\n\nVOU DAR POST\n\n");
             sem_post(sem_back);
-            printf("\n\n DEI POST NO BACK\n\n");
             log_message("STATS SENDED TO BACK_OFFICE\n");
         }
     }else{
@@ -702,7 +701,6 @@ void manage_auth(char *buf){
         //enviar mq ao mobile user para dizer que está cheio
         log_message("MOBILE USER SENT WRONG PARAMETERS.");
     }
-    printf("NAO ENTREI EM NENHUMA CONDIÇÃO\n");
     sleep(config.auth_proc_time);
 }
 
@@ -854,7 +852,7 @@ void *plafond_function(){
                 sem_wait(sem_plafond);
                 float plafond_gasto = (1 - (shared->user_array[i].plafond/shared->user_array[i].plafond_ini));
                 sem_post(sem_plafond);
-                snprintf(log_msg, sizeof(log_msg), "\nPLAFOND GASTO (USER[%d]): %.3f\n",(int) shared->user_array[i].id, plafond_gasto);
+                snprintf(log_msg, sizeof(log_msg), "PLAFOND GASTO USER[%d]: %.3f\n",(int) shared->user_array[i].id, plafond_gasto);
                 log_message(log_msg);
 
                 if(plafond_gasto == 1 ){
@@ -886,10 +884,13 @@ void *plafond_function(){
 }
 
 void *statics_function(){
+	pid_t periodic = fork();
+	if(periodic ==0){
+		pedriodic_data();
+		exit(0);
+	}
     while(run){
-        printf("\n\nWAITING FOR POST\n\n");
         sem_wait(sem_back);
-        printf("\n\n ENTREI NO POST\n\n");
         sem_wait(sem_statics);
         char buff[1024];
         sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
@@ -902,7 +903,26 @@ void *statics_function(){
         monitor.msg[sizeof(monitor.msg) - 1] = '\0';
         msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
     }
+	waitpid(periodic,NULL, 0);
     return NULL;
+}
+
+void pedriodic_data(){
+	while(run){
+		sleep(30);
+		sem_wait(sem_statics);
+        char buff[1024];
+        sprintf(buff, "---PERIODIC STATS---\nService\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
+        shared->stats.total_video, shared->stats.video_req, shared->stats.total_music, shared->stats.music_req,
+        shared->stats.total_social, shared->stats.social_req);
+        sem_post(sem_statics);
+        plafond_msg monitor;
+        monitor.id=(long)1;
+        strcpy(monitor.msg, buff);
+        monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+        msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+		log_message("PERIODIC STATS HAVE BEEN SENT");
+	}
 }
 
 int get_msg_id(){

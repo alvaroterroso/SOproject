@@ -10,10 +10,10 @@
 #include "log.h"
 
 
-#define PLA_80 "ALERT 80%% TRIGGERED"
-#define PLA_90 "ALERT 90%% TRIGGERED"
-#define PLA_100 "ALERT 100%% TRIGGERED, REMOVING USER"
-#define MOB_FULL "MOBILE USER´S LIST IS FULL, OR WRONG PARAMETHERS, CLOSING"
+#define PLA_80 "ALERT TRIGGERED: YOU HAVE USED 80%% OF YOUR PLAFOND"
+#define PLA_90 "ALERT TRIGGERED: YOU HAVE USED 90%% OF YOUR PLAFOND"
+#define PLA_100 "ALERT TRIGGERED: YOU HAVE USED 100%% OF YOUR PLAFOND, REMOVING..."
+#define MOB_FULL "MOBILE USER´S LIST IS FULL, OR WRONG PARAMETHERS, CLOSING..."
 #define data "1#data_stats"
 #define reset "1#reset"
 
@@ -66,4 +66,5 @@ void add_stats(char *msg);
 int get_msg_id();
 void *statics_function();
 void *plafond_function();
+void pedriodic_data();
 #endif
