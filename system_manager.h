@@ -69,4 +69,5 @@ void *statics_function();
 void *plafond_function();
 void pedriodic_data();
 void process_message_from_pipe(char * msg);
+void check_full(queue *head, pthread_mutex_t sem);
 #endif
