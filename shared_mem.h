@@ -91,6 +91,7 @@ sem_t * log_mutex;
 sem_t *sem_statics;	 //alterar o valor das estatisticas
 sem_t *sem_monitor; //aletar o monitor quando tiver mensagens para ler
 sem_t *sem_back; //altearar o conteudo da mensagem a enviar para a mq
+sem_t *sem_flag; 
 
 typedef struct queue{
 	char message[MAX_STRING_SIZE];

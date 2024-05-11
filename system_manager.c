@@ -30,6 +30,7 @@ int main(int argc, char **argv){
 	sem_unlink("monitor");
 	sem_unlink("mq_monitor");
 	sem_unlink("back");
+	sem_unlink("flag");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
 	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
@@ -39,11 +40,12 @@ int main(int argc, char **argv){
 	sem_statics = sem_open("statics",O_CREAT|O_EXCL, 0777,1);
 	sem_monitor = sem_open("monitor",O_CREAT|O_EXCL, 0777,0);
 	sem_back = sem_open("back",O_CREAT|O_EXCL, 0777,0);
+	sem_flag = sem_open("flag",O_CREAT|O_EXCL, 0777,1);
 
 
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
 
-
+	flag=0;
 	run = 1;
 	//ignore signal while inittilazing 
 
@@ -160,6 +162,7 @@ void free_shared(){
 	sem_destroy(sem_statics);
 	sem_destroy(sem_monitor);
 	sem_destroy(sem_back);
+	sem_destroy(sem_flag);
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
 	pthread_mutex_destroy(&mut_cond);
@@ -172,6 +175,7 @@ void free_shared(){
 	sem_unlink("video");
 	sem_unlink("other");
 	sem_unlink("monitor");
+	sem_unlink("flag");
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
 	msgctl(mqid, IPC_RMID, 0); //DONE
@@ -660,6 +664,9 @@ void manage_auth(char *buf){
 
         }else{
             //enviar mq ao mobile user para dizer que está cheio
+			sem_wait(sem_flag);
+			flag=atoi(part1);
+			sem_post(sem_flag);
             log_message("MOBILE USER LIST IS FULL, NOT GOING TO LOGIN.");
         }
         sem_post(sem_userscount);
@@ -668,7 +675,6 @@ void manage_auth(char *buf){
         if(user_index == -1){
             log_message("MOBILE USER NOT FOUND.");
         }else{
-			printf("\n\n------VOU RETIRAR PLAFOND-------\n\n");
             sem_wait(sem_plafond);
             shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
 
@@ -696,10 +702,6 @@ void manage_auth(char *buf){
             sem_post(sem_back);
             log_message("STATS SENDED TO BACK_OFFICE\n");
         }
-    }else{
-        //printf("ENTREI NO ELSE \n");
-        //enviar mq ao mobile user para dizer que está cheio
-        log_message("MOBILE USER SENT WRONG PARAMETERS.");
     }
     sleep(config.auth_proc_time);
 }
@@ -813,7 +815,6 @@ int countUsers(queue *head, pthread_mutex_t sem) {
 void monitor_engine(){
     log_message("PROCESS MONITOR_ENGINE CREATED");
     mq = get_msg_id();
-    printf("MESSAGE QUEUE ID: %d\n", mq);
     if (pthread_create(&mobile_thread, NULL, plafond_function, NULL) != 0)
     {
         log_message("CANNOT CREATE SENDER_THREAD");
@@ -846,39 +847,52 @@ void *plafond_function(){
 
     while(1){
         sem_wait(sem_monitor);
-        for(int i =0; i<config.max_mobile_user; i++){
-            if((shared->user_array[i].id > 1)){
-                plafond_msg monitor;
-                sem_wait(sem_plafond);
-                float plafond_gasto = (1 - (shared->user_array[i].plafond/shared->user_array[i].plafond_ini));
-                sem_post(sem_plafond);
-                snprintf(log_msg, sizeof(log_msg), "PLAFOND GASTO USER[%d]: %.3f\n",(int) shared->user_array[i].id, plafond_gasto);
-                log_message(log_msg);
+		sem_wait(sem_flag);
+		if(flag!=0){//se a flag por diferente de 0, é porque houve um user que nao conseguiu dar login, e a flag tem o seu id para eu saber que type usar na mensagem
+			plafond_msg monitor;
+			monitor.id = (long)flag;
+			flag=0;
+			sem_post(sem_flag);
+			strcpy(monitor.msg, MOB_FULL);
+			monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+			msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+		}
+		else{
+			sem_post(sem_flag);
+			for(int i =0; i<config.max_mobile_user; i++){
+				if((shared->user_array[i].id > 1)){
+					plafond_msg monitor;
+					sem_wait(sem_plafond);
+					float plafond_gasto = (1 - (shared->user_array[i].plafond/shared->user_array[i].plafond_ini));
+					sem_post(sem_plafond);
+					snprintf(log_msg, sizeof(log_msg), "PLAFOND GASTO USER[%d]: %.3f\n",(int) shared->user_array[i].id, plafond_gasto);
+					log_message(log_msg);
 
-                if(plafond_gasto == 1 ){
-                    
-                    monitor.id= (long)shared->user_array->id;
-                    strcpy(monitor.msg, PLA_100);
-                    monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-                    msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+					if(plafond_gasto == 1 ){
+						
+						monitor.id= (long)shared->user_array->id;
+						strcpy(monitor.msg, PLA_100);
+						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 
-                }else if(plafond_gasto > 0.9){
+					}else if(plafond_gasto > 0.9){
 
-                    monitor.id= (long)shared->user_array->id;
-                    strcpy(monitor.msg, PLA_90);
-                    monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-                    msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+						monitor.id= (long)shared->user_array->id;
+						strcpy(monitor.msg, PLA_90);
+						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 
-                }else if(plafond_gasto > 0.8){
+					}else if(plafond_gasto > 0.8){
 
-                    monitor.id= (long)shared->user_array->id;
-                    strcpy(monitor.msg, PLA_80);
-                    monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-                    msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+						monitor.id= (long)shared->user_array->id;
+						strcpy(monitor.msg, PLA_80);
+						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 
-                }
-            }
-        }
+					}
+				}
+			}
+		}
     }
     return NULL;
 }

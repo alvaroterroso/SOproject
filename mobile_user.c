@@ -77,7 +77,7 @@ int main(int argc, char **argv){
 	while(1){
 
 		if (msgrcv(mq, &plafond, sizeof(plafond) - sizeof(long), (long)new_mobile_user.id, 0) == -1){ 
-			printf("System Manager Closing...");
+			printf("System Manager Closing...\n");
 			clear_resources();
 			exit(0);
 		} else {
