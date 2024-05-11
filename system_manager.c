@@ -361,115 +361,125 @@ void create_unnamed_pipes(){
 //Função responsável por ler os Mobile Users e adicionar na fila VIDEO QUEUE ou OTHER QUEUE
 //##########################################################################################
 void *receiver_function(void *arg){
-	(void)arg;
-	log_message("THREAD RECEIVER CREATED");
+    (void)arg;
+    log_message("THREAD RECEIVER CREATED");
 
-	if ((fd_read_user= open(USER_PIPE, O_RDWR)) < 0){ //opening user for reading
-		log_message("ERROR OPENING USER_PIPE FOR READING!");
-		free_shared();
-		exit(1);
-	}
-	log_message("USER_PIPE FOR READING IS OPEN!");
+    if ((fd_read_user= open(USER_PIPE, O_RDWR)) < 0){ //opening user for reading
+        log_message("ERROR OPENING USER_PIPE FOR READING!");
+        free_shared();
+        exit(1);
+    }
+    log_message("USER_PIPE FOR READING IS OPEN!");
 
-	if ((fd_read_back= open(BACK_PIPE,  O_RDWR)) < 0){//opening user for reading
-		log_message("ERROR OPENING BACK_PIPE FOR READING!");
-		free_shared();
-		exit(1);
-	}
-	log_message("BACK_PIPE FOR READING IS OPEN!");
+    if ((fd_read_back= open(BACK_PIPE,  O_RDWR)) < 0){//opening user for reading
+        log_message("ERROR OPENING BACK_PIPE FOR READING!");
+        free_shared();
+        exit(1);
+    }
+    log_message("BACK_PIPE FOR READING IS OPEN!");
+    
+    int cont=0;
+    char good_msg[MAX_STRING_SIZE] = {0};
+    char buf[MAX_STRING_SIZE];
 
-	int cont=0;
+    while(1){
+        fd_set read_set;
+        FD_ZERO(&read_set);
 
-	while(1){
-		fd_set read_set;
-		FD_ZERO(&read_set);
-
-		FD_SET(fd_read_user, &read_set);
-		FD_SET(fd_read_back, &read_set);
-		int nfds = (fd_read_user > fd_read_back ? fd_read_user : fd_read_back) + 1;
-		if(select(nfds,&read_set,NULL,NULL,NULL)>0){
-			if (FD_ISSET(fd_read_user, &read_set)) {
-                char buf[MAX_STRING_SIZE];
-                int n = read(fd_read_user, buf, MAX_STRING_SIZE);
+        FD_SET(fd_read_user, &read_set);
+        FD_SET(fd_read_back, &read_set);
+        int nfds = (fd_read_user > fd_read_back ? fd_read_user : fd_read_back) + 1;
+        if(select(nfds,&read_set,NULL,NULL,NULL)>0){
+            if (FD_ISSET(fd_read_user, &read_set)) {
+                int n = read(fd_read_user, buf, MAX_STRING_SIZE); //here
+                //printf("Bits lidos -> %d\n", n);
                 if (n > 0) {
-					if(buf[0] == '\0')
-						break;
+                    buf[n] = '\0'; // Ensure the buffer is null-terminated
+                    char *segment = strtok(buf, ";");  // Get the first token
+                    while (segment != NULL) {  // Continue while there are tokens
+                        printf("\n\nRECEIVED: %s [%d]\n\n", segment, ++cont);
+                        printf("INSIDE DO-WHILE -> %s\n", segment);
 
-					cont ++;
-                    buf[n] = '\0';
-                    char copy[MAX_STRING_SIZE];
-                    strncpy(copy, buf, sizeof(copy) - 1);
-                    copy[sizeof(copy) - 1] = '\0';
+                        // If you need to preserve the original message for further use after modification:
+                        strcpy(good_msg, segment);  // Copy the current segment to good_msg
+                        process_message_from_pipe(good_msg);  // Process the message
 
-                    char *part1, *part2, *part3;
-					part1 = strtok(buf, "#");
-					if (part1 != NULL) {
-						part2 = strtok(NULL, "#");
-					}
-					if (part2 != NULL) {
-						part3 = strtok(NULL, "#");
-					}
-
-					printf("\n\nRECEBI: %s [%d]\n\n", copy, cont);
-
-                    if ((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
-
-                        if (strcmp("VIDEO", part2) == 0) {
-							if(countUsers(q_video,mut_video) <= config.queue_slot_number){//ver se chegou ao limite na fila
-								pthread_mutex_lock(&mut_cond);
-								add_queue(&q_video, copy, mut_video);
-								pthread_cond_signal(&cond);
-								pthread_mutex_unlock(&mut_cond);
-
-								log_message("MESSAGE ADDED TO VIDEO QUEUE.");
-							}else{
-								log_message("VIDEO QUEUE IS FULL, DISCARDING...");
-							}
-                        } else {
-							if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
-								pthread_mutex_lock(&mut_cond);
-								add_queue(&q_other, copy, mut_other);
-								pthread_cond_signal(&cond);
-								pthread_mutex_unlock(&mut_cond);
-								snprintf(log_msg, sizeof(log_msg), "MESSAGE ADDED TO OTHERS QUEUE.(%s)",part2);
-                				log_message(log_msg);
-							}else{
-								log_message("OTHER QUEUE IS FULL, DISCARDING...");
-							}
-                        }
-                    } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
-						if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
-							pthread_mutex_lock(&mut_cond);
-							add_queue(&q_other, copy, mut_other);
-							pthread_cond_signal(&cond);
-							pthread_mutex_unlock(&mut_cond);
-
-							log_message("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
-						}else{
-							log_message("OTHER QUEUE IS FULL, DISCARDING...");
-						}
-                    } else {
-                        log_message("MOBILE USER SENT WRONG PARAMETERS.");
+                        segment = strtok(NULL, ";");  // Get the next token
                     }
-                }else	log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
+                }
+                    //*good_msg = '\0'; 
+            }else   log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
             }
-			if(FD_ISSET(fd_read_back,&read_set))
-			{
-				//mandar para others_queue
-				char buf[MAX_STRING_SIZE];
-				int n=read(fd_read_back, buf, MAX_STRING_SIZE);
-				//printf("%s\n", buf);
-				if(n>0){
-					pthread_mutex_lock(&mut_cond);
-					add_queue(&q_other,buf, mut_other);
-					pthread_cond_signal(&cond);
-					pthread_mutex_unlock(&mut_cond);
-					log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
-				}else log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
-			}
-		}
-	}
-	return NULL;
+            if(FD_ISSET(fd_read_back,&read_set))
+            {
+                //mandar para others_queue
+                char buf[MAX_STRING_SIZE];
+                int n=read(fd_read_back, buf, MAX_STRING_SIZE);
+                //printf("%s\n", buf);
+                if(n>0){
+                    pthread_mutex_lock(&mut_cond);
+                    add_queue(&q_other,buf, mut_other);
+                    pthread_cond_signal(&cond);
+                    pthread_mutex_unlock(&mut_cond);
+                    log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
+                }else log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
+            }
+        }
+    return NULL;
+    }
+
+
+void process_message_from_pipe(char * msg){
+    printf("MESSAGE INSIDE PROCESS -> %s\n", msg);
+    char *part1, *part2, *part3;
+    char copia[MAX_STRING_SIZE];
+    strcpy(copia, msg);
+        part1 = strtok(msg, "#");
+        if (part1 != NULL) {
+            part2 = strtok(NULL, "#");
+        }
+        if (part2 != NULL) {
+            part3 = strtok(NULL, "#");
+        }
+
+    if ((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
+
+        if (strcmp("VIDEO", part2) == 0) {
+            if(countUsers(q_video,mut_video) <= config.queue_slot_number){//ver se chegou ao limite na fila
+                pthread_mutex_lock(&mut_cond);
+                add_queue(&q_video, copia, mut_video);
+                pthread_cond_signal(&cond);
+                pthread_mutex_unlock(&mut_cond);
+
+                log_message("MESSAGE ADDED TO VIDEO QUEUE.");
+            }else{
+                log_message("VIDEO QUEUE IS FULL, DISCARDING...");
+            }
+        } else {
+            if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
+                pthread_mutex_lock(&mut_cond);
+                add_queue(&q_other, copia, mut_other);
+                pthread_cond_signal(&cond);
+                pthread_mutex_unlock(&mut_cond);
+                log_message("MESSAGE ADDED TO OTHERS QUEUE.");
+            }else{
+                log_message("OTHER QUEUE IS FULL, DISCARDING...");
+            }
+        }
+    } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
+        if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
+            pthread_mutex_lock(&mut_cond);
+            add_queue(&q_other, copia, mut_other);
+            pthread_cond_signal(&cond);
+            pthread_mutex_unlock(&mut_cond);
+
+            log_message("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
+        }else{
+            log_message("OTHER QUEUE IS FULL, DISCARDING...");
+        }
+    } else {
+        log_message("MOBILE USER SENT WRONG PARAMETERS.");
+    }
 }
 
 

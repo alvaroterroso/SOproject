@@ -38,10 +38,22 @@ int main(int argc, char **argv){
 
 	run=1;
 
+	son_mq = fork();
+	if(son_mq == 0){
+		read_mq();
+		exit(0);
+	}else if(son_mq == -1){
+		printf("Error creating read_mq proc\n");
+		clear_resources();
+		exit(1);
+	}
+
 	//register message
 	memset(log_msg,0,sizeof(log_msg));
 	snprintf(log_msg, sizeof(log_msg), "%d#%d",new_mobile_user.id, new_mobile_user.init_plafond);
+
 	printf("mensagem mobile: %s\n",log_msg);
+
 	if((fd_write = open(USER_PIPE, O_WRONLY))<0){
 		printf("CANNOT OPEN PIPE FOR WRITING\n");
 		clear_resources();
@@ -67,44 +79,33 @@ int main(int argc, char **argv){
 		}
 	}
 
-
-	int mq = get_msg_id();
-
-	plafond_msg plafond;
-	while(1){
-
-		if (msgrcv(mq, &plafond, sizeof(plafond) - sizeof(long), (long)new_mobile_user.id, 0) == -1){ 
-			printf("System Manager Closing...\n");
-			clear_resources();
-			exit(0);
-		} else {
-			if(strcmp(plafond.msg, PLA_80)==0 || strcmp(plafond.msg, PLA_90)==0){
-				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
-			}else if(strcmp(plafond.msg, PLA_100)==0 || strcmp(plafond.msg, MOB_FULL) == 0){
-				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
-				clear_resources();
-				exit(0);
-			}
-		}
-
+	for(int i=0; i<3; i++){
+		pthread_join(worker[i],NULL);
 	}
+
+	run = 0;
+
+	kill(son_mq, SIGTERM);  // Envia sinal SIGTERM para o processo filho
+    wait(NULL);
 
 	return 0;
 
 }
 
 void clear_resources(){
-	run=0;
-	for(int i=0; i<3; i++){
-		pthread_cancel(worker[i]);
-		pthread_join(worker[i],NULL);
-	}
 	pthread_mutex_destroy(&request_number);
 	pthread_mutex_destroy(&contorl_write);
 
 }
 
 void signal_handler(){
+	run=0;
+	for(int i=0; i<3; i++){
+		pthread_cancel(worker[i]);
+		pthread_join(worker[i],NULL);
+	}
+	kill(son_mq, SIGTERM);  // Envia sinal SIGTERM para o processo filho
+    wait(NULL);
 	clear_resources();
 	exit(0);
 }
@@ -117,8 +118,8 @@ void *send_data(void* arg) {
 		memset(log_msg,0,sizeof(log_msg));
         // Checa se ainda há requisições e se o sistema não está cheio
         if (new_mobile_user.auth_request_number <= 0) {
-            pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições ou se o sistema está cheio
-            break; // Sai do loop se não há mais requisições ou se o sistema está cheio
+            pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições 
+            break; // Sai do loop se não há mais requisições 
         }
 
         // Decrementa o número de requisições de forma segura
@@ -141,6 +142,29 @@ void *send_data(void* arg) {
     }
 	return NULL;
 }
+
+
+void read_mq(){
+	int mq = get_msg_id();
+
+	plafond_msg plafond;
+	while(run){
+
+		if (msgrcv(mq, &plafond, sizeof(plafond) - sizeof(long), (long)new_mobile_user.id, 0) == -1){ 
+			printf("System Manager Closing...\n");
+			run = 0;
+		} else {
+			if(strcmp(plafond.msg, PLA_80)==0 || strcmp(plafond.msg, PLA_90)==0){
+				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
+			}else if(strcmp(plafond.msg, PLA_100)==0 || strcmp(plafond.msg, MOB_FULL) == 0){
+				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
+				run = 0;
+			}
+		}
+
+	}
+}
+
 
 int get_msg_id(){
     int msqid;

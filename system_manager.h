@@ -68,4 +68,5 @@ int get_msg_id();
 void *statics_function();
 void *plafond_function();
 void pedriodic_data();
+void process_message_from_pipe(char * msg);
 #endif
