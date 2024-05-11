@@ -9,7 +9,9 @@
 #include "shared_mem.h"
 //mutex mobile user count
 mobile_user_struct new_mobile_user;
-pthread_t worker[3];
+pthread_t social_t;
+pthread_t video_t;
+pthread_t music_t;
 pid_t son_mq;
 
 void clear_resources();
@@ -17,10 +19,9 @@ void *send_data(void* arg);
 int get_msg_id();
 void read_mq();
 
-typedef struct {
-    int interval;
-    char *tipo;
-} ThreadArg;
+void *send_social();
+void *send_video();
+void *send_music();
 
 
 #endif

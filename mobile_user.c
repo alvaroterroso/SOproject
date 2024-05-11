@@ -62,26 +62,23 @@ int main(int argc, char **argv){
 
 	write(fd_write, log_msg, sizeof(log_msg));//login message
 	
-	int intervalos[3] = {new_mobile_user.video_interval, new_mobile_user.music_interval, new_mobile_user.social_interval};
-	char *tipo[3] = {"VIDEO", "MUSIC", "SOCIAL"};
 
-	for(int i=0; i<3; i++){
-		ThreadArg *thread = malloc(sizeof(ThreadArg));  // Alocação de memória
-        if (thread == NULL) {
-            perror("Failed to allocate memory for thread arguments");
-            exit(1);
-        }
-        thread->interval = intervalos[i];
-        thread->tipo = tipo[i];
-		if (pthread_create(&worker[i], NULL, send_data, (void*)thread) != 0){
-			printf("CANNOT CREATE WORKER THREAD\n");
-			exit(1);
-		}
+	if (pthread_create(&video_t, NULL, send_video, NULL) != 0){
+		printf("CANNOT CREATE WORKER THREAD\n");
+		exit(1);
 	}
-
-	for(int i=0; i<3; i++){
-		pthread_join(worker[i],NULL);
+	if (pthread_create(&social_t, NULL, send_social, NULL) != 0){
+		printf("CANNOT CREATE WORKER THREAD\n");
+		exit(1);
 	}
+	if (pthread_create(&music_t, NULL, send_music, NULL) != 0){
+		printf("CANNOT CREATE WORKER THREAD\n");
+		exit(1);
+	}
+	
+	pthread_join(music_t,NULL);
+	pthread_join(video_t,NULL);
+	pthread_join(social_t,NULL);
 
 	run = 0;
 
@@ -100,36 +97,32 @@ void clear_resources(){
 
 void signal_handler(){
 	run=0;
-	for(int i=0; i<3; i++){
-		pthread_cancel(worker[i]);
-		pthread_join(worker[i],NULL);
-	}
+	pthread_cancel(music_t);
+	pthread_join(music_t,NULL);
+	pthread_cancel(video_t);
+	pthread_join(video_t,NULL);
+	pthread_cancel(social_t);
+	pthread_join(social_t,NULL);
+
 	kill(son_mq, SIGTERM);  // Envia sinal SIGTERM para o processo filho
     wait(NULL);
 	clear_resources();
 	exit(0);
 }
 
-void *send_data(void* arg) {
-    ThreadArg *thread = (ThreadArg*) arg;
-
+void *send_video() {
     while (run) {
-        pthread_mutex_lock(&request_number); // Espera pelo semáforo para manipular o número de requisições
-		memset(log_msg,0,sizeof(log_msg));
-        // Checa se ainda há requisições e se o sistema não está cheio
+        pthread_mutex_lock(&request_number); 
         if (new_mobile_user.auth_request_number <= 0) {
             pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições 
             break; // Sai do loop se não há mais requisições 
         }
-
-        // Decrementa o número de requisições de forma segura
         --new_mobile_user.auth_request_number;
         pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
 
         // Prepara a mensagem a ser enviada
-        snprintf(log_msg, sizeof(log_msg), "%d#%s#%d", new_mobile_user.id, thread->tipo, new_mobile_user.to_reserve_data);
+        snprintf(log_msg, sizeof(log_msg), "%d#VIDEO#%d", new_mobile_user.id, new_mobile_user.to_reserve_data);
 
-		fflush(stdout);
 		if(log_msg!=NULL){
 			pthread_mutex_lock(&contorl_write);
 			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
@@ -137,8 +130,63 @@ void *send_data(void* arg) {
 				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
 			}else printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
 			pthread_mutex_unlock(&contorl_write);
-			sleep(thread->interval); // Aguarda pelo intervalo especificado antes de enviar a próxima mensagem
 		}
+		printf("sleep video: %d\n",new_mobile_user.video_interval );
+		sleep(new_mobile_user.video_interval);
+    }
+	return NULL;
+}
+
+void *send_music() {
+    while (run) {
+        pthread_mutex_lock(&request_number); 
+        if (new_mobile_user.auth_request_number <= 0) {
+            pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições 
+            break; // Sai do loop se não há mais requisições 
+        }
+        --new_mobile_user.auth_request_number;
+        pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
+
+        // Prepara a mensagem a ser enviada
+        snprintf(log_msg, sizeof(log_msg), "%d#MUSIC#%d", new_mobile_user.id, new_mobile_user.to_reserve_data);
+
+		if(log_msg!=NULL){
+			pthread_mutex_lock(&contorl_write);
+			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
+			if (bytes_written == -1) {
+				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
+			}else printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
+			pthread_mutex_unlock(&contorl_write);
+		}
+		printf("sleep music: %d\n",new_mobile_user.music_interval );
+		sleep(new_mobile_user.music_interval);
+    }
+	return NULL;
+}
+
+void *send_social() {
+    while (run) {
+        pthread_mutex_lock(&request_number); 
+        if (new_mobile_user.auth_request_number <= 0) {
+            pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições 
+            break; // Sai do loop se não há mais requisições 
+        }
+        --new_mobile_user.auth_request_number;
+        pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
+
+        // Prepara a mensagem a ser enviada
+        snprintf(log_msg, sizeof(log_msg), "%d#SOCIAL#%d", new_mobile_user.id, new_mobile_user.to_reserve_data);
+
+		if(log_msg!=NULL){
+			pthread_mutex_lock(&contorl_write);
+			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
+			if (bytes_written == -1) {
+				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
+			}else printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
+			pthread_mutex_unlock(&contorl_write);
+		}
+		printf("sleep social: %d\n",new_mobile_user.social_interval );
+		sleep(new_mobile_user.social_interval);
     }
 	return NULL;
 }
