@@ -17,6 +17,9 @@ pthread_mutex_t mut_monitor = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_cond = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
+bool full = 0;
+int adicional = 0;
+
 //####################################################################################
 //Criação dos semaforos necessários  e por dar inicio ao programa
 //####################################################################################
@@ -215,7 +218,7 @@ void init_prog() {
     }
 
     // Inicializar array read_count_shared diretamente
-    for (int i = 0; i < config.max_auth_servers; i++) {
+    for (int i = 0; i < config.max_auth_servers + 1; i++) {
         shared->read_count_shared[i] = 0;
 		log_message("AUTHORIZATION ENGINE %d READY");
     }
@@ -445,36 +448,41 @@ void process_message_from_pipe(char * msg){
     if ((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
 
         if (strcmp("VIDEO", part2) == 0) {
-            if(countUsers(q_video,mut_video) <= config.queue_slot_number){//ver se chegou ao limite na fila
-                pthread_mutex_lock(&mut_cond);
+            if(countUsers(q_video,mut_video) < config.queue_slot_number){//ver se chegou ao limite na fila
+                check_full(q_video,mut_video);
+				pthread_mutex_lock(&mut_cond);
                 add_queue(&q_video, copia, mut_video);
                 pthread_cond_signal(&cond);
                 pthread_mutex_unlock(&mut_cond);
 
                 log_message("MESSAGE ADDED TO VIDEO QUEUE.");
             }else{
+				full = true; adicional = 1;
                 log_message("VIDEO QUEUE IS FULL, DISCARDING...");
             }
         } else {
-            if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
-                pthread_mutex_lock(&mut_cond);
+            if(countUsers(q_other,mut_other) < config.queue_slot_number){//ver se chegou ao limite na fila
+                check_full(q_other,mut_other);
+				pthread_mutex_lock(&mut_cond);
                 add_queue(&q_other, copia, mut_other);
                 pthread_cond_signal(&cond);
                 pthread_mutex_unlock(&mut_cond);
                 log_message("MESSAGE ADDED TO OTHERS QUEUE.");
             }else{
+				full = true; adicional = 1;
                 log_message("OTHER QUEUE IS FULL, DISCARDING...");
             }
         }
     } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
-        if(countUsers(q_other,mut_other) <= config.queue_slot_number){//ver se chegou ao limite na fila
-            pthread_mutex_lock(&mut_cond);
+        if(countUsers(q_other,mut_other) < config.queue_slot_number){//ver se chegou ao limite na fila
+            check_full(q_other,mut_other);
+			pthread_mutex_lock(&mut_cond);
             add_queue(&q_other, copia, mut_other);
             pthread_cond_signal(&cond);
             pthread_mutex_unlock(&mut_cond);
-
             log_message("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
         }else{
+			full = true; adicional = 1;
             log_message("OTHER QUEUE IS FULL, DISCARDING...");
         }
     } else {
@@ -513,10 +521,19 @@ void *sender_function(void *arg) {
     return NULL;
 }
 
+void check_full(queue *head, pthread_mutex_t sem){
+	if (full){
+		adicional = 1;
+	}else if(countUser(head, sem) <= config.queue_slot_number/2){
+		full = false;
+		adicional = 0;
+	}
+}
+
 void process_queue_item(queue **q, pthread_mutex_t mut) {
     bool found = false;
 	sem_wait(sem_read_count);
-    for (int i = 0; i < config.max_auth_servers; i++) {
+    for (int i = 0; i < config.max_auth_servers + adicional; i++) {
         if (shared->read_count_shared[i] == 0) {
             shared->read_count_shared[i] = 1;
 			sem_post(sem_read_count);
@@ -576,7 +593,7 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 void create_autho_engines(){                                           //fazer waitpid no fim!!!!!!!!!!!!!!!!!!!!!!!
 	log_message("AUTHORIZATION_ENGINES PROCESSES BEING CREATED");
 	autho_engines_pid = (pid_t*) malloc(config.max_auth_servers * sizeof(pid_t));
-	for(int i = 0; i < config.max_auth_servers; i++){
+	for(int i = 0; i < config.max_auth_servers + 1; i++){
 		autho_engines_pid[i] = fork();
 		if(autho_engines_pid[i] == 0){
 			read_from_unnamed(i);
@@ -585,7 +602,7 @@ void create_autho_engines(){                                           //fazer w
 			log_message("Error creating auth engines proccess.");
 		}
 	}
-	for(int i = 0; i < config.max_auth_servers; i++){
+	for(int i = 0; i < config.max_auth_servers + 1; i++){
 		waitpid(autho_engines_pid[i], NULL, 0);
 	}
 }
