@@ -39,7 +39,6 @@ int main(int argc, char **argv){
 	log_mutex= sem_open("mutex", O_CREAT|O_EXCL, 0777,1);
 	sem_statics = sem_open("statics",O_CREAT|O_EXCL, 0777,1);
 	sem_monitor = sem_open("monitor",O_CREAT|O_EXCL, 0777,0);
-	sem_back = sem_open("back",O_CREAT|O_EXCL, 0777,0);
 	sem_flag = sem_open("flag",O_CREAT|O_EXCL, 0777,1);
 
 
@@ -161,12 +160,10 @@ void free_shared(){
 	sem_destroy(sem_plafond);
 	sem_destroy(sem_statics);
 	sem_destroy(sem_monitor);
-	sem_destroy(sem_back);
 	sem_destroy(sem_flag);
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
 	pthread_mutex_destroy(&mut_cond);
-	sem_unlink("back");
 	sem_unlink("statics");
 	sem_unlink("shared");
 	sem_unlink("counter");
@@ -553,8 +550,11 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 	}else if(part3!=NULL){
 		snprintf(log_msg, sizeof(log_msg),"SENDER: %s AUTHORIZATION REGUEST (ID = %d) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", part2, atoi(part1), i);
         log_message(log_msg);
-	}else{
+	}else if(verificaS(part2)==2){
 		snprintf(log_msg, sizeof(log_msg),"SENDER: LOGIN AUTHORIZATION REGUEST (ID = %d) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", atoi(part1), i);
+        log_message(log_msg);
+	}else{
+		snprintf(log_msg, sizeof(log_msg),"SENDER: BACKOFFICE STATICS REGUEST (ID = %d) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", atoi(part1), i);
         log_message(log_msg);
 	}
 	return q_some;
@@ -699,7 +699,18 @@ void manage_auth(char *buf){
             sem_post(sem_statics);
             log_message("STATS RESETED!\n");
         }else{
-            sem_post(sem_back);
+            sem_wait(sem_statics);
+			char buff[1024];
+			sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
+			shared->stats.total_video, shared->stats.video_req, shared->stats.total_music, shared->stats.music_req,
+			shared->stats.total_social, shared->stats.social_req);
+			sem_post(sem_statics);
+			plafond_msg monitor;
+			monitor.id=(long)1;
+			strcpy(monitor.msg, buff);
+			monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+			int mqid_= get_msg_id();
+			msgsnd(mqid_,&monitor,sizeof(monitor)-sizeof(long),0);
             log_message("STATS SENDED TO BACK_OFFICE\n");
         }
     }
@@ -898,30 +909,6 @@ void *plafond_function(){
 }
 
 void *statics_function(){
-	pid_t periodic = fork();
-	if(periodic ==0){
-		pedriodic_data();
-		exit(0);
-	}
-    while(run){
-        sem_wait(sem_back);
-        sem_wait(sem_statics);
-        char buff[1024];
-        sprintf(buff, "Service\tTotal Data\tAuth Reqs\nVIDEO\t%d\t%d\nMUSIC\t%d\t%d\nSOCIAL\t%d\t%d\n",
-        shared->stats.total_video, shared->stats.video_req, shared->stats.total_music, shared->stats.music_req,
-        shared->stats.total_social, shared->stats.social_req);
-        sem_post(sem_statics);
-        plafond_msg monitor;
-        monitor.id=(long)1;
-        strcpy(monitor.msg, buff);
-        monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-        msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-    }
-	waitpid(periodic,NULL, 0);
-    return NULL;
-}
-
-void pedriodic_data(){
 	while(run){
 		sleep(30);
 		sem_wait(sem_statics);
@@ -937,7 +924,9 @@ void pedriodic_data(){
         msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 		log_message("PERIODIC STATS HAVE BEEN SENT");
 	}
+    return NULL;
 }
+
 
 int get_msg_id(){
     int msqid;

@@ -90,7 +90,6 @@ sem_t * log_mutex;
 //sem_t *sem_controlar; //semaforo que só deixa a sender verificar se ha mensagens para ler ( só desbloqueia quando alguem envia para a fila)
 sem_t *sem_statics;	 //alterar o valor das estatisticas
 sem_t *sem_monitor; //aletar o monitor quando tiver mensagens para ler
-sem_t *sem_back; //altearar o conteudo da mensagem a enviar para a mq
 sem_t *sem_flag; 
 
 typedef struct queue{
