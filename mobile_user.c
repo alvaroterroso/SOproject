@@ -121,7 +121,7 @@ void *send_video() {
         pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
 
         // Prepara a mensagem a ser enviada
-        snprintf(log_msg, sizeof(log_msg), "%d#VIDEO#%d", new_mobile_user.id, new_mobile_user.to_reserve_data);
+        snprintf(log_msg, sizeof(log_msg), "%d#VIDEO#%d;", new_mobile_user.id, new_mobile_user.to_reserve_data);
 
 		if(log_msg!=NULL){
 			pthread_mutex_lock(&contorl_write);
@@ -148,7 +148,7 @@ void *send_music() {
         pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
 
         // Prepara a mensagem a ser enviada
-        snprintf(log_msg, sizeof(log_msg), "%d#MUSIC#%d", new_mobile_user.id, new_mobile_user.to_reserve_data);
+        snprintf(log_msg, sizeof(log_msg), "%d#MUSIC#%d;", new_mobile_user.id, new_mobile_user.to_reserve_data);
 
 		if(log_msg!=NULL){
 			pthread_mutex_lock(&contorl_write);
@@ -175,7 +175,7 @@ void *send_social() {
         pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
 
         // Prepara a mensagem a ser enviada
-        snprintf(log_msg, sizeof(log_msg), "%d#SOCIAL#%d", new_mobile_user.id, new_mobile_user.to_reserve_data);
+        snprintf(log_msg, sizeof(log_msg), "%d#SOCIAL#%d;", new_mobile_user.id, new_mobile_user.to_reserve_data);
 
 		if(log_msg!=NULL){
 			pthread_mutex_lock(&contorl_write);
@@ -206,7 +206,8 @@ void read_mq(){
 				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
 			}else if(strcmp(plafond.msg, PLA_100)==0 || strcmp(plafond.msg, MOB_FULL) == 0){
 				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);
-				run = 0;
+				signal_handler();
+				exit(0);
 			}
 		}
 

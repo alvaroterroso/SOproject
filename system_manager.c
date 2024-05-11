@@ -215,6 +215,7 @@ void init_prog() {
         shared->user_array[i].id = -1;  
         shared->user_array[i].plafond = -1;  
         shared->user_array[i].plafond_ini = -1;  
+		shared->user_array[i].time_entry = -1; 
     }
 
     // Inicializar array read_count_shared diretamente
@@ -433,7 +434,7 @@ void *receiver_function(void *arg){
 
 
 void process_message_from_pipe(char * msg){
-    printf("MESSAGE INSIDE PROCESS -> %s\n", msg);
+
     char *part1, *part2, *part3;
     char copia[MAX_STRING_SIZE];
     strcpy(copia, msg);
@@ -524,7 +525,7 @@ void *sender_function(void *arg) {
 void check_full(queue *head, pthread_mutex_t sem){
 	if (full){
 		adicional = 1;
-	}else if(countUser(head, sem) <= config.queue_slot_number/2){
+	}else if(countUsers(head, sem) <= config.queue_slot_number/2){
 		full = false;
 		adicional = 0;
 	}

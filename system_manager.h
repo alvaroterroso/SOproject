@@ -17,7 +17,6 @@
 #define data "1#data_stats"
 #define reset "1#reset"
 
-int full;
 //identifier of message queue
 int mqid;
 //arranjar maneira de por esta variavel -> config.max_mobile_user

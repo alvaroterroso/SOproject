@@ -63,6 +63,7 @@ typedef struct users_{//COMENTAR USERS DA SHARED MEM
 	int id;
 	float plafond;
 	float plafond_ini;
+	int time_entry;
 }users_;
 
 typedef struct stats_struct{
