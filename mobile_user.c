@@ -6,7 +6,6 @@ int fd_write;
 
 
 pthread_mutex_t request_number = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t contorl_write = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv){
 	if(argc < 7){
@@ -91,7 +90,6 @@ int main(int argc, char **argv){
 
 void clear_resources(){
 	pthread_mutex_destroy(&request_number);
-	pthread_mutex_destroy(&contorl_write);
 
 }
 
@@ -116,23 +114,25 @@ void *send_video() {
         if (new_mobile_user.auth_request_number <= 0) {
             pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições 
             break; // Sai do loop se não há mais requisições 
-        }
-        --new_mobile_user.auth_request_number;
-        pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
+        }else{
+			sprintf(log_msg, "%d#VIDEO#%d;", new_mobile_user.id, new_mobile_user.to_reserve_data);
 
-        // Prepara a mensagem a ser enviada
-        snprintf(log_msg, sizeof(log_msg), "%d#VIDEO#%d;", new_mobile_user.id, new_mobile_user.to_reserve_data);
-
-		if(log_msg!=NULL){
-			pthread_mutex_lock(&contorl_write);
 			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
+
 			if (bytes_written == -1) {
 				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
-			}else printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
-			pthread_mutex_unlock(&contorl_write);
+			}else {
+				printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
+			}
+
+			memset(log_msg,0,MAX_STRING_SIZE);
+
+			--new_mobile_user.auth_request_number;
+			pthread_mutex_unlock(&request_number);
+			
+			printf("sleep video: %d\n",new_mobile_user.video_interval );
+			sleep(new_mobile_user.video_interval);
 		}
-		printf("sleep video: %d\n",new_mobile_user.video_interval );
-		sleep(new_mobile_user.video_interval);
     }
 	return NULL;
 }
@@ -143,23 +143,25 @@ void *send_music() {
         if (new_mobile_user.auth_request_number <= 0) {
             pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições 
             break; // Sai do loop se não há mais requisições 
-        }
-        --new_mobile_user.auth_request_number;
-        pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
+        }else{
+			sprintf(log_msg, "%d#MUSIC#%d;", new_mobile_user.id, new_mobile_user.to_reserve_data);
 
-        // Prepara a mensagem a ser enviada
-        snprintf(log_msg, sizeof(log_msg), "%d#MUSIC#%d;", new_mobile_user.id, new_mobile_user.to_reserve_data);
-
-		if(log_msg!=NULL){
-			pthread_mutex_lock(&contorl_write);
 			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
+
 			if (bytes_written == -1) {
 				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
-			}else printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
-			pthread_mutex_unlock(&contorl_write);
+			}else {
+				printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
+			}
+
+			memset(log_msg,0,MAX_STRING_SIZE);
+
+			--new_mobile_user.auth_request_number;
+			pthread_mutex_unlock(&request_number);
+
+			printf("sleep music: %d\n",new_mobile_user.music_interval );
+			sleep(new_mobile_user.music_interval);
 		}
-		printf("sleep music: %d\n",new_mobile_user.music_interval );
-		sleep(new_mobile_user.music_interval);
     }
 	return NULL;
 }
@@ -170,23 +172,25 @@ void *send_social() {
         if (new_mobile_user.auth_request_number <= 0) {
             pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições 
             break; // Sai do loop se não há mais requisições 
-        }
-        --new_mobile_user.auth_request_number;
-        pthread_mutex_unlock(&request_number); // Libera o semáforo após a modificação segura
+        }else{
+			sprintf(log_msg, "%d#SOCIAL#%d;", new_mobile_user.id, new_mobile_user.to_reserve_data);
 
-        // Prepara a mensagem a ser enviada
-        snprintf(log_msg, sizeof(log_msg), "%d#SOCIAL#%d;", new_mobile_user.id, new_mobile_user.to_reserve_data);
-
-		if(log_msg!=NULL){
-			pthread_mutex_lock(&contorl_write);
 			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
+
 			if (bytes_written == -1) {
 				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
-			}else printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
-			pthread_mutex_unlock(&contorl_write);
+			}else {
+				printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
+			}
+
+			memset(log_msg,0,MAX_STRING_SIZE);
+
+			--new_mobile_user.auth_request_number;
+			pthread_mutex_unlock(&request_number);
+			
+			printf("sleep social: %d\n",new_mobile_user.social_interval );
+			sleep(new_mobile_user.social_interval);
 		}
-		printf("sleep social: %d\n",new_mobile_user.social_interval );
-		sleep(new_mobile_user.social_interval);
     }
 	return NULL;
 }
