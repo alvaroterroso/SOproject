@@ -493,13 +493,13 @@ void process_message_from_pipe(char * msg){
     char *part1, *part2, *part3;
     char copia[MAX_STRING_SIZE];
     strcpy(copia, msg);
-        part1 = strtok(msg, "#");
-        if (part1 != NULL) {
-            part2 = strtok(NULL, "#");
-        }
-        if (part2 != NULL) {
-            part3 = strtok(NULL, "#");
-        }
+	part1 = strtok(msg, "#");
+	if (part1 != NULL) {
+		part2 = strtok(NULL, "#");
+	}
+	if (part2 != NULL) {
+		part3 = strtok(NULL, "#");
+	}
 
     if ((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
 
@@ -562,6 +562,7 @@ void *sender_function(void *arg) {
 		}
 		pthread_mutex_unlock(&mut_cond);
         // Processa a fila de vídeo
+
         if (!is_empty(q_video, mut_video, "VIDEO")) {
             while (!is_empty(q_video, mut_video,"VIDEO")) {
                 process_queue_item(&q_video, mut_video, 1);
@@ -626,20 +627,19 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i,int type){
 	if (part2 != NULL) {
 		part3 = strtok(NULL, "#");
 	}
-	
 	ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
 	if (num_written == -1) {
 		log_message("ERROR WRITING ON UNNAMED PIPE.");
 		free_shared();
 		exit(1);
 	}else if(part3!=NULL){
-		snprintf(log_msg, sizeof(log_msg),"SENDER: %s AUTHORIZATION REGUEST (ID = %d) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", part2, atoi(part1), i);
+		snprintf(log_msg, sizeof(log_msg),"SENDER: %s AUTHORIZATION REGUEST (ID = %s) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", part2, part1, i);
         log_message(log_msg);
 	}else if(verificaS(part2)==2){
-		snprintf(log_msg, sizeof(log_msg),"SENDER: LOGIN AUTHORIZATION REGUEST (ID = %d) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", atoi(part1), i);
+		snprintf(log_msg, sizeof(log_msg),"SENDER: LOGIN AUTHORIZATION REGUEST (ID = %s) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", part1, i);
         log_message(log_msg);
 	}else{
-		snprintf(log_msg, sizeof(log_msg),"SENDER: BACKOFFICE STATICS REGUEST (ID = %d) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", atoi(part1), i);
+		snprintf(log_msg, sizeof(log_msg),"SENDER: BACKOFFICE STATICS REGUEST (ID = %s) SENT FOR PROCESSING ON AUTHORIZATION_ENGINE %d\n", part1, i);
         log_message(log_msg);
 	}
 	return q_some;
@@ -663,7 +663,6 @@ void create_autho_engines(){
 	for(int i = 0; i < config.max_auth_servers + 1; i++){
 		waitpid(autho_engines_pid[i], NULL, 0);
 	}
-	free(autho_engines_pid);
 }
 
 //-----------------Lê os unnamed pipes através do Authorization Engine-----------
@@ -674,16 +673,47 @@ void read_from_unnamed(int i){
 		int n;
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
-			snprintf(log_msg, sizeof(log_msg),"READ FROM UNNAMED : %s",message);
-        	log_message(log_msg);	
+
+			char *part1, *part2, *part3;
+    		char copia[MAX_STRING_SIZE];
+			strcpy(copia, message);
+
+			part1 = strtok(copia, "#");
+			if (part1 != NULL) {
+				part2 = strtok(NULL, "#");
+			}
+			if (part2 != NULL) {
+				part3 = strtok(NULL, "#");
+			}
+			if(part3 == NULL){}
+
 			if(count_char_occurrences(message,'#') == 2){
 				add_stats(message);
 			}
+
+			manage_auth(message);	
+
+			if(part3 == NULL){
+				if(*part1 ==1){
+					sprintf(log_msg,"AUTHORIZATION ENGINE %d : BACK OFFICE REQUEST (ID = %s) PROCESSING COMPLETED\n",i,part1);
+					log_message(log_msg);
+				}else{
+					sprintf(log_msg,"AUTHORIZATION ENGINE %d : LOGIN REQUEST (ID = %s) PROCESSING COMPLETED\n",i,part1);
+					log_message(log_msg);	
+				}
+			}else{
+				sprintf(log_msg,"AUTHORIZATION ENGINE %d : %s AUTHORIZATION REQUEST (ID = %s) PROCESSING COMPLETED\n",i,part2,part1);
+				log_message(log_msg);
+			}
+
+			sleep(config.auth_proc_time);//durante o sleep o auth engine deve ser visto como indisponivel certo?????????????????????
+
 			sem_wait(sem_read_count);
 
-			shared->read_count_shared[i] = 0;		
+			shared->read_count_shared[i] = 0;	
+
 			sem_post(sem_read_count);
-			manage_auth(message);
+
 		}else	log_message("EROR READING FROM UNNAMED PIPE.");
 	}
 }
@@ -798,7 +828,6 @@ void manage_auth(char *buf){
             log_message("STATS SENDED TO BACK_OFFICE\n");
         }
     }
-    sleep(config.auth_proc_time);
 }
 
 //#####################################################################

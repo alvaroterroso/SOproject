@@ -28,7 +28,7 @@
 #define BACK_PIPE "/tmp/BACK_PIPE"
 #define MSQ_FILE "msq_id.txt"
 
-#define MAX_STRING_SIZE 256
+#define MAX_STRING_SIZE 215
 
 #define FILENAME "log.txt"
 
