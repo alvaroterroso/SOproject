@@ -14,8 +14,8 @@ VER SE ESTÁ CERTO:
 pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_monitor = PTHREAD_MUTEX_INITIALIZER;   // Definição real
-pthread_mutex_t mut_cond = PTHREAD_MUTEX_INITIALIZER;   // Definição real
-pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+//pthread_mutex_t mut_cond = PTHREAD_MUTEX_INITIALIZER;   // Definição real
+//pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 bool full = 0;
 int adicional = 0;
@@ -24,26 +24,7 @@ int adicional = 0;
 //Criação dos semaforos necessários  e por dar inicio ao programa
 //####################################################################################
 int main(int argc, char **argv){
-	sem_unlink("shared");
-	sem_unlink("counter");
-	sem_unlink("read_count");
-	sem_unlink("plafond");
-	sem_unlink("mutex");
-	sem_unlink("statics");
-	sem_unlink("monitor");
-	sem_unlink("mq_monitor");
-	sem_unlink("back");
-	sem_unlink("flag");
-	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
-	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
-	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
-	sem_plafond = sem_open("plafond",O_CREAT|O_EXCL, 0777,1);
-	//sem_controlar = sem_open("control", O_CREAT|O_EXCL, 0777,0);
-	log_mutex= sem_open("mutex", O_CREAT|O_EXCL, 0777,1);
-	sem_statics = sem_open("statics",O_CREAT|O_EXCL, 0777,1);
-	sem_monitor = sem_open("monitor",O_CREAT|O_EXCL, 0777,0);
-	sem_flag = sem_open("flag",O_CREAT|O_EXCL, 0777,1);
-
+	sem_initializer();
 
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
 
@@ -77,6 +58,73 @@ int main(int argc, char **argv){
 	}
 	return 0;
 }
+//Função que inicia os semaforos
+
+void sem_initializer(){
+	sem_unlink("shared");
+	sem_unlink("counter");
+	sem_unlink("read_count");
+	sem_unlink("plafond");
+	sem_unlink("mutex");
+	sem_unlink("statics");
+	sem_unlink("monitor");
+	sem_unlink("mq_monitor");
+	sem_unlink("back");
+	sem_unlink("flag");
+	sem_unlink("go");
+	sem_unlink("run");
+	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
+	if (sem_shared == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_SHARED");
+    	exit(1);
+	}
+	sem_userscount = sem_open("counter",O_CREAT|O_EXCL, 0777,1);
+	if (sem_userscount == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_USERSCOUNT");
+    	exit(1);
+	}
+	sem_read_count = sem_open("read_count",O_CREAT|O_EXCL, 0777,1);
+	if (sem_read_count == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_READ_COUNT");
+    	exit(1);
+	}
+	sem_plafond = sem_open("plafond",O_CREAT|O_EXCL, 0777,1);
+	if (sem_plafond == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_PLAFOND");
+    	exit(1);
+	}
+	log_mutex= sem_open("mutex", O_CREAT|O_EXCL, 0777,1);
+	if (log_mutex == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_LOG");
+    	exit(1);
+	}
+	sem_statics = sem_open("statics",O_CREAT|O_EXCL, 0777,1);
+	if (sem_statics == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_STATICS");
+    	exit(1);
+	}
+	sem_monitor = sem_open("monitor",O_CREAT|O_EXCL, 0777,0);
+	if (sem_monitor == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_MONITOR");
+    	exit(1);
+	}
+	sem_flag = sem_open("flag",O_CREAT|O_EXCL, 0777,1);
+	if (sem_flag == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_FLAG");
+    	exit(1);
+	}
+	sem_go = sem_open("go",O_CREAT|O_EXCL, 0777,0);
+	if (sem_go == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_GO");
+    	exit(1);
+	}
+	sem_run = sem_open("run",O_CREAT|O_EXCL, 0777,1);
+	if (sem_run == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_RUN");
+    	exit(1);
+	}
+}
+
 
 //------------Função de verificação dos parametros-------------
 bool validate_config(char* filename) {
@@ -155,22 +203,33 @@ void signal_handler(){
 
 //-----------------Função que destroi semaforos, mutex, shared memory e message queue-----------------------
 void free_shared(){
+	sem_wait(sem_run);
+	shared->run = 0;
+	sem_post(sem_run);
+	printf("OLA\n");
+	//pthread_cancel(receiver_thread);
+	pthread_join(receiver_thread,NULL);
+	//pthread_cancel(sender_thread);
+	pthread_join(sender_thread,NULL);
+	printf("OLA1\n");
 	close(fd_read_back);
 	close(fd_read_user);
+	printf("OLA2\n");
 	unlink(BACK_PIPE);
 	unlink(USER_PIPE);
+	printf("OLA3\n");
 	for(int i = 0; i < config.max_auth_servers; i ++){
 		close(pipes[i][0]);
 		close(pipes[i][1]);
 	}
-	pthread_cancel(receiver_thread);
-	pthread_join(receiver_thread,NULL);
-	pthread_cancel(sender_thread);
-	pthread_join(sender_thread,NULL);
-	pthread_cancel(mobile_thread);
+	printf("OLA4\n");
+	//pthread_cancel(mobile_thread);
 	pthread_join(mobile_thread,NULL);
-	pthread_cancel(back_thread);
+	//pthread_cancel(back_thread);
 	pthread_join(back_thread,NULL);
+	printf("OLA5\n");
+	destroyQueue(&q_video);
+	destroyQueue(&q_other);
 	sem_destroy(sem_shared);
 	sem_destroy(sem_userscount);
 	sem_destroy(sem_read_count);
@@ -178,9 +237,11 @@ void free_shared(){
 	sem_destroy(sem_statics);
 	sem_destroy(sem_monitor);
 	sem_destroy(sem_flag);
+	sem_destroy(sem_go);
+	sem_destroy(sem_run);
+	printf("OLA7\n");
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
-	pthread_mutex_destroy(&mut_cond);
 	sem_unlink("statics");
 	sem_unlink("shared");
 	sem_unlink("counter");
@@ -190,9 +251,21 @@ void free_shared(){
 	sem_unlink("other");
 	sem_unlink("monitor");
 	sem_unlink("flag");
+	sem_unlink("run");
+	printf("OLA8\n");
+	fcntl(fd_read_back,F_GETFL);
+	close(fd_read_back);
+	fcntl(fd_read_user,F_GETFL);
+	close(fd_read_user);
+	unlink(USER_PIPE);
+	unlink(BACK_PIPE);
+	printf("OLA9\n");
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
+	printf("OLA10\n");
+	remove(MSQ_FILE);
 	msgctl(mqid, IPC_RMID, 0); //DONE
+
 }
 
 //#########################################################################################
@@ -200,54 +273,7 @@ void free_shared(){
 //#########################################################################################
 void init_prog() {
 
-    /*int shm_size = sizeof(shm);
-
-    if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0777)) < 0) {
-        log_message("ERROR IN SHMGET");
-        exit(1);
-    }
-
-    shared = (shm *)shmat(shm_id, NULL, 0);
-    if (shared == (void *)-1) {
-        log_message("ERROR IN SHMAT");
-        exit(1);
-    }
-    log_message("SHARED MEMORY IS ALLOCATED");
-
-	//ARRAY DE USERS
-
-	if((shm_users = shmget(IPC_PRIVATE, sizeof(users_)* config.max_mobile_user, IPC_CREAT|0777)==-1)){
-		log_message(("Error in shmget"));
-		exit(1);
-	}
-	
-	if((shared->user_array = (users_*)shmat(shm_users,NULL,0))== (users_ *)-1){
-		log_message("ERROR IN SHMAT1");
-        exit(1);
-	}
-
-	 for (int i = 0; i < config.max_mobile_user; i++) {
-        shared->user_array[i].id = -1;  
-        shared->user_array[i].plafond = -1;  
-        shared->user_array[i].plafond_ini = -1;  
-    }
-
-	//ARRAY DE 0 e 1 referentes á disponibilidade do unnamed pipe
-	if((shm_readcount = shmget(IPC_PRIVATE, sizeof(int)* (config.max_auth_servers +1), IPC_CREAT|0777)==-1)){
-		log_message(("Error in shmget"));
-		exit(1);
-	}
-	if((shared->read_count_shared = (int*)shmat(shm_readcount,NULL,0))== (int *)-1){
-		log_message("ERROR IN SHMAT2");
-        exit(1);
-	}
-
-    for (int i = 0; i < config.max_auth_servers + 1; i++) {
-        shared->read_count_shared[i] = 0;
-		log_message("AUTHORIZATION ENGINE %d READY");
-    }*/
-
-	 int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * (config.max_auth_servers +1) + sizeof(stats_struct);
+	int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * (config.max_auth_servers +1) + sizeof(stats_struct) + sizeof(int) *2 +sizeof(bool);
 
     if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 0) {
         log_message("ERROR IN SHMGET");
@@ -278,7 +304,7 @@ void init_prog() {
 		log_message("AUTHORIZATION ENGINE %d READY");
     }
 
-
+	shared->run = true;
 
 
 	signal(SIGINT, signal_handler);//HANDLE CTRL-C
@@ -442,8 +468,9 @@ void *receiver_function(void *arg){
     int cont=0;
     char good_msg[MAX_STRING_SIZE] = {0};
     char buf[MAX_STRING_SIZE];
-
-    while(1){
+	sem_wait(sem_run);
+    while(shared->run){
+		sem_post(sem_run);
         fd_set read_set;
         FD_ZERO(&read_set);
 
@@ -469,23 +496,23 @@ void *receiver_function(void *arg){
                 }
             }else   log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
             }
-            if(FD_ISSET(fd_read_back,&read_set))
-            {
-                //mandar para others_queue
-                char buf[MAX_STRING_SIZE];
-                int n=read(fd_read_back, buf, MAX_STRING_SIZE);
-                //printf("%s\n", buf);
-                if(n>0){
-                    pthread_mutex_lock(&mut_cond);
-                    add_queue(&q_other,buf, mut_other);
-                    pthread_cond_signal(&cond);
-                    pthread_mutex_unlock(&mut_cond);
-                    log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
-                }else log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
-            }
-        }
-    return NULL;
+		if(FD_ISSET(fd_read_back,&read_set))
+		{
+			//mandar para others_queue
+			char buf[MAX_STRING_SIZE];
+			int n=read(fd_read_back, buf, MAX_STRING_SIZE);
+			//printf("%s\n", buf);
+			if(n>0){
+				add_queue(&q_other,buf, mut_other);
+				sem_post(sem_go);
+				log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
+			}else log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
+		}
+		sem_wait(sem_run);
     }
+	sem_post(sem_run);
+    return NULL;
+}
 
 
 void process_message_from_pipe(char * msg){
@@ -506,10 +533,8 @@ void process_message_from_pipe(char * msg){
         if (strcmp("VIDEO", part2) == 0) {
             if(countUsers(q_video,mut_video) < config.queue_slot_number){//ver se chegou ao limite na fila
                 check_full(q_video,mut_video);
-				pthread_mutex_lock(&mut_cond);
                 add_queue(&q_video, copia, mut_video);
-                pthread_cond_signal(&cond);
-                pthread_mutex_unlock(&mut_cond);
+				sem_post(sem_go);
 
                 log_message("MESSAGE ADDED TO VIDEO QUEUE.");
             }else{
@@ -519,10 +544,8 @@ void process_message_from_pipe(char * msg){
         } else {
             if(countUsers(q_other,mut_other) < config.queue_slot_number){//ver se chegou ao limite na fila
                 check_full(q_other,mut_other);
-				pthread_mutex_lock(&mut_cond);
                 add_queue(&q_other, copia, mut_other);
-                pthread_cond_signal(&cond);
-                pthread_mutex_unlock(&mut_cond);
+				sem_post(sem_go);
                 log_message("MESSAGE ADDED TO OTHERS QUEUE.");
             }else{
 				full = true; adicional = 1;
@@ -532,10 +555,8 @@ void process_message_from_pipe(char * msg){
     } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
         if(countUsers(q_other,mut_other) < config.queue_slot_number){//ver se chegou ao limite na fila
             check_full(q_other,mut_other);
-			pthread_mutex_lock(&mut_cond);
             add_queue(&q_other, copia, mut_other);
-            pthread_cond_signal(&cond);
-            pthread_mutex_unlock(&mut_cond);
+			sem_post(sem_go);
             log_message("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
         }else{
 			full = true; adicional = 1;
@@ -556,12 +577,7 @@ void *sender_function(void *arg) {
     log_message("THREAD SENDER CREATED");
 
     while (1) {
-		pthread_mutex_lock(&mut_cond);
-		while(is_empty(q_video, mut_video, "VIDEO") && is_empty(q_other, mut_other, "OTHER")){
-			pthread_cond_wait(&cond, &mut_cond);
-		}
-		pthread_mutex_unlock(&mut_cond);
-        // Processa a fila de vídeo
+		sem_wait(sem_go);
 
         if (!is_empty(q_video, mut_video, "VIDEO")) {
             while (!is_empty(q_video, mut_video,"VIDEO")) {
@@ -660,16 +676,17 @@ void create_autho_engines(){
 			log_message("Error creating auth engines proccess.");
 		}
 	}
-	for(int i = 0; i < config.max_auth_servers + 1; i++){
-		waitpid(autho_engines_pid[i], NULL, 0);
-	}
+	while(wait(NULL)>0);
+	return;
 }
 
 //-----------------Lê os unnamed pipes através do Authorization Engine-----------
 void read_from_unnamed(int i){
 	char message[MAX_STRING_SIZE];
 	close(pipes[i][1]);
-	while(1){
+	sem_wait(sem_run);
+	while(shared->run){
+		sem_post(sem_run);
 		int n;
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
@@ -716,6 +733,8 @@ void read_from_unnamed(int i){
 
 		}else	log_message("EROR READING FROM UNNAMED PIPE.");
 	}
+	sem_post(sem_run);
+	return;
 }
 
 
@@ -902,6 +921,21 @@ char *rem_queue(queue **head, pthread_mutex_t sem,int type) {
     return message;  // Return the duplicated message
 }
 
+void destroyQueue(queue **head) {
+    if (head == NULL || *head == NULL) return;  // Check if the queue pointer or head is NULL
+
+    queue *current = *head;  // Start with the head of the queue
+    queue *next;
+
+    while (current != NULL) {  // Traverse each node until the end
+        next = current->next;  // Store the next node
+        free(current);         // Free the current node
+        current = next;        // Move to the next node
+    }
+
+    *head = NULL;  // After all nodes are freed, reset the head to NULL
+}
+
 
 //----------------Verifica se a Fila está Vazia----------------------
 int is_empty(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]){  //1 se está vazia, 0 tem elementos
@@ -981,8 +1015,9 @@ void monitor_engine(){
 } 
 
 void *plafond_function(){
-
-    while(1){
+	sem_wait(sem_run);
+    while(shared->run){
+		sem_post(sem_run);
         sem_wait(sem_monitor);
 		sem_wait(sem_flag);
 		if(flag!=0){//se a flag por diferente de 0, é porque houve um user que nao conseguiu dar login, e a flag tem o seu id para eu saber que type usar na mensagem
@@ -1030,12 +1065,16 @@ void *plafond_function(){
 				}
 			}
 		}
+		sem_wait(sem_run);
     }
+	sem_post(sem_run);
     return NULL;
 }
 
 void *statics_function(){
-	while(1){
+	sem_wait(sem_run);
+	while(shared->run){
+		sem_post(sem_run);
 		sleep(30);
 		sem_wait(sem_statics);
         char buff[1024];
@@ -1049,7 +1088,9 @@ void *statics_function(){
         monitor.msg[sizeof(monitor.msg) - 1] = '\0';
         msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 		log_message("PERIODIC STATS HAVE BEEN SENT");
+		sem_wait(sem_run);
 	}
+	sem_post(sem_run);
     return NULL;
 }
 

@@ -70,4 +70,6 @@ void pedriodic_data();
 void process_message_from_pipe(char * msg);
 void check_full(queue *head, pthread_mutex_t sem);
 long long current_time_millis();
+void destroyQueue(queue **head);
+void sem_initializer();
 #endif

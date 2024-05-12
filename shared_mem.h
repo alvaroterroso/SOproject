@@ -74,11 +74,11 @@ typedef struct stats_struct{
 }stats_struct;
 
 typedef struct shm{
-	//users_ *users;		     //lista dos mobile users criados
 	users_ *user_array; 		//array de users
 	int * read_count_shared; //array dos unnamed pipes disponiveis
 	int mobile_users;		 //numero de mobile users registados
 	int flag; 				//saber quando o mobile user nao conseguiu dar login pela fila estar cheia
+	bool run;
 	stats_struct stats;      //stats do backoffice_user
 }shm;
 
@@ -95,6 +95,9 @@ sem_t * log_mutex;
 sem_t *sem_statics;	 //alterar o valor das estatisticas
 sem_t *sem_monitor; //aletar o monitor quando tiver mensagens para ler
 sem_t *sem_flag; 
+sem_t *sem_go;
+sem_t *sem_run;
+
 
 typedef struct queue{
 	char message[MAX_STRING_SIZE];
@@ -128,7 +131,7 @@ char log_msg[MAX_STRING_SIZE]; // fazer antes malloc para dar free no fim, so ai
 config_struct config;
 
 //threads
-pthread_t receiver_thread, sender_thread, mobile_thread, back_thread; 
+pthread_t receiver_thread, sender_thread, sender_thread, mobile_thread, back_thread; 
 
 //process
 pid_t auth_request_manager_pid, monitor_engine_pid, system_manager_pid;
