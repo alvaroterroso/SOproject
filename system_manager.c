@@ -48,7 +48,6 @@ int main(int argc, char **argv){
 	log_message("5G_AUTH_PLATFORM SIMULATOR STARTING");
 
 	flag=0;
-	run = 1;
 	//ignore signal while inittilazing 
 
 	signal(SIGINT, SIG_IGN);
@@ -156,7 +155,22 @@ void signal_handler(){
 
 //-----------------Função que destroi semaforos, mutex, shared memory e message queue-----------------------
 void free_shared(){
-	run=0;
+	close(fd_read_back);
+	close(fd_read_user);
+	unlink(BACK_PIPE);
+	unlink(USER_PIPE);
+	for(int i = 0; i < config.max_auth_servers; i ++){
+		close(pipes[i][0]);
+		close(pipes[i][1]);
+	}
+	pthread_cancel(receiver_thread);
+	pthread_join(receiver_thread,NULL);
+	pthread_cancel(sender_thread);
+	pthread_join(sender_thread,NULL);
+	pthread_cancel(mobile_thread);
+	pthread_join(mobile_thread,NULL);
+	pthread_cancel(back_thread);
+	pthread_join(back_thread,NULL);
 	sem_destroy(sem_shared);
 	sem_destroy(sem_userscount);
 	sem_destroy(sem_read_count);
@@ -179,20 +193,61 @@ void free_shared(){
 	shmdt(&shm_id);
 	shmctl(shm_id, IPC_RMID, NULL);
 	msgctl(mqid, IPC_RMID, 0); //DONE
-	unlink(BACK_PIPE);
-	unlink(USER_PIPE);
-	for(int i = 0; i < config.max_auth_servers; i ++){
-		close(pipes[i][0]);
-		close(pipes[i][1]);
-	}
 }
 
 //#########################################################################################
 //Cria shared memory,  message queue e os processos Auth Requeste Manager e Monitor Engine
 //#########################################################################################
 void init_prog() {
-    // Tamanho da estrutura shm mais o espaço necessário para o array read_count_shared
-    int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * (config.max_auth_servers +1) + sizeof(stats_struct);
+
+    /*int shm_size = sizeof(shm);
+
+    if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0777)) < 0) {
+        log_message("ERROR IN SHMGET");
+        exit(1);
+    }
+
+    shared = (shm *)shmat(shm_id, NULL, 0);
+    if (shared == (void *)-1) {
+        log_message("ERROR IN SHMAT");
+        exit(1);
+    }
+    log_message("SHARED MEMORY IS ALLOCATED");
+
+	//ARRAY DE USERS
+
+	if((shm_users = shmget(IPC_PRIVATE, sizeof(users_)* config.max_mobile_user, IPC_CREAT|0777)==-1)){
+		log_message(("Error in shmget"));
+		exit(1);
+	}
+	
+	if((shared->user_array = (users_*)shmat(shm_users,NULL,0))== (users_ *)-1){
+		log_message("ERROR IN SHMAT1");
+        exit(1);
+	}
+
+	 for (int i = 0; i < config.max_mobile_user; i++) {
+        shared->user_array[i].id = -1;  
+        shared->user_array[i].plafond = -1;  
+        shared->user_array[i].plafond_ini = -1;  
+    }
+
+	//ARRAY DE 0 e 1 referentes á disponibilidade do unnamed pipe
+	if((shm_readcount = shmget(IPC_PRIVATE, sizeof(int)* (config.max_auth_servers +1), IPC_CREAT|0777)==-1)){
+		log_message(("Error in shmget"));
+		exit(1);
+	}
+	if((shared->read_count_shared = (int*)shmat(shm_readcount,NULL,0))== (int *)-1){
+		log_message("ERROR IN SHMAT2");
+        exit(1);
+	}
+
+    for (int i = 0; i < config.max_auth_servers + 1; i++) {
+        shared->read_count_shared[i] = 0;
+		log_message("AUTHORIZATION ENGINE %d READY");
+    }*/
+
+	 int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * (config.max_auth_servers +1) + sizeof(stats_struct);
 
     if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 0) {
         log_message("ERROR IN SHMGET");
@@ -215,7 +270,6 @@ void init_prog() {
         shared->user_array[i].id = -1;  
         shared->user_array[i].plafond = -1;  
         shared->user_array[i].plafond_ini = -1;  
-		shared->user_array[i].time_entry = -1; 
     }
 
     // Inicializar array read_count_shared diretamente
@@ -223,6 +277,9 @@ void init_prog() {
         shared->read_count_shared[i] = 0;
 		log_message("AUTHORIZATION ENGINE %d READY");
     }
+
+
+
 
 	signal(SIGINT, signal_handler);//HANDLE CTRL-C
 
@@ -402,7 +459,6 @@ void *receiver_function(void *arg){
                     char *segment = strtok(buf, ";");  // Get the first token
                     while (segment != NULL) {  // Continue while there are tokens
                         printf("\n\nRECEIVED: %s [%d]\n\n", segment, ++cont);
-                        printf("INSIDE DO-WHILE -> %s\n", segment);
 
                         // If you need to preserve the original message for further use after modification:
                         strcpy(good_msg, segment);  // Copy the current segment to good_msg
@@ -411,7 +467,6 @@ void *receiver_function(void *arg){
                         segment = strtok(NULL, ";");  // Get the next token
                     }
                 }
-                    //*good_msg = '\0'; 
             }else   log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
             }
             if(FD_ISSET(fd_read_back,&read_set))
@@ -500,7 +555,7 @@ void *sender_function(void *arg) {
     (void)arg;
     log_message("THREAD SENDER CREATED");
 
-    while (run) {
+    while (1) {
 		pthread_mutex_lock(&mut_cond);
 		while(is_empty(q_video, mut_video, "VIDEO") && is_empty(q_other, mut_other, "OTHER")){
 			pthread_cond_wait(&cond, &mut_cond);
@@ -509,13 +564,13 @@ void *sender_function(void *arg) {
         // Processa a fila de vídeo
         if (!is_empty(q_video, mut_video, "VIDEO")) {
             while (!is_empty(q_video, mut_video,"VIDEO")) {
-                process_queue_item(&q_video, mut_video);
+                process_queue_item(&q_video, mut_video, 1);
             }
         }
 
         // Processa a fila de "other" a cada ciclo da fila de vídeo
         if (!is_empty(q_other, mut_other, "OTHER")) {
-            process_queue_item(&q_other, mut_other);
+            process_queue_item(&q_other, mut_other, 0);
         }
 
     }
@@ -531,14 +586,14 @@ void check_full(queue *head, pthread_mutex_t sem){
 	}
 }
 
-void process_queue_item(queue **q, pthread_mutex_t mut) {
+void process_queue_item(queue **q, pthread_mutex_t mut,int type) {
     bool found = false;
 	sem_wait(sem_read_count);
     for (int i = 0; i < config.max_auth_servers + adicional; i++) {
         if (shared->read_count_shared[i] == 0) {
             shared->read_count_shared[i] = 1;
 			sem_post(sem_read_count);
-            *q = write_unnamed(*q, mut, i);
+            *q = write_unnamed(*q, mut, i, type);
             found = true;
             break;
         }
@@ -550,14 +605,17 @@ void process_queue_item(queue **q, pthread_mutex_t mut) {
 }
 
 //---------------Função que escreve nos Unnamed Pipes-------------
-queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
+queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i,int type){
 
 	char msg[MAX_STRING_SIZE];
-	char *temp = rem_queue(&q_some, mut);
+	char *temp = rem_queue(&q_some, mut,type);
 
 	if (temp) {
 		strncpy(msg, temp, MAX_STRING_SIZE);
 		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula
+	}else{
+		log_message("REQUEST HAS EXCEEDED TIME LIMIT");
+		return q_some;
 	}
 
 	char *part1, *part2, *part3;
@@ -572,7 +630,6 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 	ssize_t num_written = write(pipes[i][1], msg, sizeof(msg));
 	if (num_written == -1) {
 		log_message("ERROR WRITING ON UNNAMED PIPE.");
-		run=0;
 		free_shared();
 		exit(1);
 	}else if(part3!=NULL){
@@ -591,7 +648,7 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i){
 //###################################################
 //Cria em específico os Authorization Engines	    
 //###################################################
-void create_autho_engines(){                                           //fazer waitpid no fim!!!!!!!!!!!!!!!!!!!!!!!
+void create_autho_engines(){                                           
 	log_message("AUTHORIZATION_ENGINES PROCESSES BEING CREATED");
 	autho_engines_pid = (pid_t*) malloc(config.max_auth_servers * sizeof(pid_t));
 	for(int i = 0; i < config.max_auth_servers + 1; i++){
@@ -606,18 +663,18 @@ void create_autho_engines(){                                           //fazer w
 	for(int i = 0; i < config.max_auth_servers + 1; i++){
 		waitpid(autho_engines_pid[i], NULL, 0);
 	}
+	free(autho_engines_pid);
 }
 
 //-----------------Lê os unnamed pipes através do Authorization Engine-----------
 void read_from_unnamed(int i){
 	char message[MAX_STRING_SIZE];
 	close(pipes[i][1]);
-	while(run){
+	while(1){
 		int n;
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
-			
-			snprintf(log_msg, sizeof(log_msg),"READ FROM UNNAMED: %s\n",message);
+			snprintf(log_msg, sizeof(log_msg),"READ FROM UNNAMED : %s",message);
         	log_message(log_msg);	
 			if(count_char_occurrences(message,'#') == 2){
 				add_stats(message);
@@ -709,7 +766,6 @@ void manage_auth(char *buf){
             if(shared->user_array[user_index].plafond < 0)  shared->user_array[user_index].plafond = 0;
             sem_post(sem_plafond);
             log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-			log_message(log_msg);
             sem_post(sem_monitor);
         
         }
@@ -760,6 +816,7 @@ void add_queue(queue **head, const char *message, pthread_mutex_t sem) {
     strncpy(newNode->message, message, MAX_STRING_SIZE);
     newNode->message[MAX_STRING_SIZE - 1] = '\0';  // Garantir terminação nula
     newNode->next = NULL;
+	newNode->time = current_time_millis();
 
     pthread_mutex_lock(&sem);
     if (*head == NULL) {
@@ -780,7 +837,7 @@ void add_queue(queue **head, const char *message, pthread_mutex_t sem) {
 }
 
 //--------------Remove o user da sua Fila---------------------------------
-char *rem_queue(queue **head, pthread_mutex_t sem) {
+char *rem_queue(queue **head, pthread_mutex_t sem,int type) {
     pthread_mutex_lock(&sem);
     if (*head == NULL) {
         pthread_mutex_unlock(&sem);
@@ -791,6 +848,7 @@ char *rem_queue(queue **head, pthread_mutex_t sem) {
     char *message = malloc(strlen(temp->message) + 1);  // +1 for null terminator
     if (message == NULL) {
         pthread_mutex_unlock(&sem);
+
         return NULL;  // Handle allocation failure
     }
 
@@ -798,9 +856,20 @@ char *rem_queue(queue **head, pthread_mutex_t sem) {
     strcpy(message, temp->message);
     *head = temp->next;  // Point the head to the next element
 
-    free(temp);
+	long long now = current_time_millis();
+    long long elapsed = now - temp->time;
 
+    free(temp);
     pthread_mutex_unlock(&sem);
+
+	if(type == 1){
+		if(elapsed > config.max_video_wait)
+			return NULL;
+	}else{
+		if(elapsed > config.max_others_wait)
+			return NULL;
+	}
+
     return message;  // Return the duplicated message
 }
 
@@ -937,7 +1006,7 @@ void *plafond_function(){
 }
 
 void *statics_function(){
-	while(run){
+	while(1){
 		sleep(30);
 		sem_wait(sem_statics);
         char buff[1024];
@@ -969,4 +1038,14 @@ int get_msg_id(){
     }
     fclose(fp);
     return msqid;
+}
+
+long long current_time_millis() {
+    struct timeval time;
+    if (gettimeofday(&time, NULL) == 0) {
+        return (long long)time.tv_sec * 1000 + (long long)time.tv_usec / 1000;
+    } else {
+        perror("Failed to get time");
+        return -1;
+    }
 }

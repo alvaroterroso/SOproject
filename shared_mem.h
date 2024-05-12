@@ -21,6 +21,8 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <ctype.h>
+#include <time.h> 
+#include <sys/time.h>
 
 #define USER_PIPE "/tmp/USER_PIPE"
 #define BACK_PIPE "/tmp/BACK_PIPE"
@@ -63,7 +65,6 @@ typedef struct users_{//COMENTAR USERS DA SHARED MEM
 	int id;
 	float plafond;
 	float plafond_ini;
-	int time_entry;
 }users_;
 
 typedef struct stats_struct{
@@ -77,12 +78,14 @@ typedef struct shm{
 	users_ *user_array; 		//array de users
 	int * read_count_shared; //array dos unnamed pipes disponiveis
 	int mobile_users;		 //numero de mobile users registados
+	int flag; 				//saber quando o mobile user nao conseguiu dar login pela fila estar cheia
 	stats_struct stats;      //stats do backoffice_user
 }shm;
 
+shm *shared; 
+
 sem_t *sem_plafond; // semaforo para lidar com a shared memory
 
-shm *shared; 
 
 sem_t *sem_shared; //semaforo para lidar com a fila da shared memory
 sem_t *sem_userscount; //semaforo para lidar com o usercount da shared memory
@@ -95,6 +98,7 @@ sem_t *sem_flag;
 
 typedef struct queue{
 	char message[MAX_STRING_SIZE];
+	long long time;
 	struct queue *next;
 }queue;
 
@@ -111,6 +115,8 @@ int social[2];
 
 //inicializar shared memory
 int shm_id;
+int shm_users;
+int shm_readcount;
 
 //config filename
 char filename[MAX_STRING_SIZE];
