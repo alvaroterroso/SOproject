@@ -123,6 +123,11 @@ void sem_initializer(){
 		log_message("ERROR OPENING SEM_RUN");
     	exit(1);
 	}
+	sem_times = sem_open("times",O_CREAT|O_EXCL, 0777,1);
+	if (sem_run == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_TIMES");
+    	exit(1);
+	}
 }
 
 
@@ -296,6 +301,7 @@ void init_prog() {
         shared->user_array[i].id = -1;  
         shared->user_array[i].plafond = -1;  
         shared->user_array[i].plafond_ini = -1;  
+		shared->user_array[i].times = 0;
     }
 
     // Inicializar array read_count_shared diretamente
@@ -704,10 +710,6 @@ void read_from_unnamed(int i){
 			}
 			if(part3 == NULL){}
 
-			if(count_char_occurrences(message,'#') == 2){
-				add_stats(message);
-			}
-
 			manage_auth(message);	
 
 			if(part3 == NULL){
@@ -805,17 +807,27 @@ void manage_auth(char *buf){
         }
         sem_post(sem_userscount);
     }else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
+
         int user_index = searchUser(atoi(part1));
         if(user_index == -1){
             log_message("MOBILE USER NOT FOUND.");
         }else{
             sem_wait(sem_plafond);
-            shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
-
-            if(shared->user_array[user_index].plafond < 0)  shared->user_array[user_index].plafond = 0;
-            sem_post(sem_plafond);
-            log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-            sem_post(sem_monitor);
+			if(shared->user_array[user_index].plafond < atoi(part3)){
+				log_message("MOBILE USER [%d] DOESNT HAVE ENOUGH PLAFOND TO CONTINUE...");
+				sem_post(sem_plafond);
+				sem_wait(sem_flag);
+				flag=atoi(part1);
+				sem_post(sem_flag);
+			}else{
+				shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
+				sem_post(sem_plafond);
+				log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+				sem_post(sem_monitor);
+				if(count_char_occurrences(copia,'#') == 2){
+					add_stats(copia);
+				}
+			}
         
         }
     }else if(atoi(part1) == 1) { // mensagem do BACK_OFFICE
@@ -1031,6 +1043,7 @@ void *plafond_function(){
 		}
 		else{
 			sem_post(sem_flag);
+			log_message("------GOING TO CHECK EVERYONE PLAFOND------\n");
 			for(int i =0; i<config.max_mobile_user; i++){
 				if((shared->user_array[i].id > 1)){
 					plafond_msg monitor;
@@ -1042,24 +1055,38 @@ void *plafond_function(){
 
 					if(plafond_gasto == 1 ){
 						
-						monitor.id= (long)shared->user_array->id;
-						strcpy(monitor.msg, PLA_100);
-						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+						sem_wait(sem_times);
+						if(shared->user_array[i].times <= 2){
+							monitor.id= (long)shared->user_array->id;
+							strcpy(monitor.msg, PLA_100);
+							monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+							msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+							shared->user_array[i].times += 1;
+						}
+						sem_post(sem_times);
 
 					}else if(plafond_gasto > 0.9){
 
-						monitor.id= (long)shared->user_array->id;
-						strcpy(monitor.msg, PLA_90);
-						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+						sem_wait(sem_times);
+						if(shared->user_array[i].times <= 1){
+							monitor.id= (long)shared->user_array->id;
+							strcpy(monitor.msg, PLA_90);
+							monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+							msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+							shared->user_array[i].times += 1;
+						}
+						sem_post(sem_times);
 
 					}else if(plafond_gasto > 0.8){
-
-						monitor.id= (long)shared->user_array->id;
-						strcpy(monitor.msg, PLA_80);
-						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+						sem_wait(sem_times);
+						if(shared->user_array[i].times == 0){
+							monitor.id= (long)shared->user_array->id;
+							strcpy(monitor.msg, PLA_80);
+							monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+							msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+							shared->user_array[i].times += 1;
+						}
+						sem_post(sem_times);
 
 					}
 				}
