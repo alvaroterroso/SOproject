@@ -1,25 +1,10 @@
 //Álvaro Terroso 2021213782
 //Rui Oliveira 2022210616
 
-/*
-TODO:
-->CRIAR FILAS DE VIDEO E A OTHERS, E ENVIAR OS DADOS DO MOBILE USER PARA A FILA CORRESPONDENTE
-->METODO PARA AVISAR SE O MOBILE USER  FOI OU NAO REGISTADO
-VER SE ESTÁ CERTO:
-->VER SE O MOBILE USER CONSEGUE DAR LOGIN 
-
-*/
-
 #include "system_manager.h"
 pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_monitor = PTHREAD_MUTEX_INITIALIZER;   // Definição real
-//pthread_mutex_t mut_check = PTHREAD_MUTEX_INITIALIZER;   // Definição real
-//pthread_mutex_t mut_cond = PTHREAD_MUTEX_INITIALIZER;   // Definição real
-//pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-
-bool full = 0;
-int adicional = 0;
 
 //####################################################################################
 //Criação dos semaforos necessários  e por dar inicio ao programa
@@ -59,8 +44,8 @@ int main(int argc, char **argv){
 	}
 	return 0;
 }
-//Função que inicia os semaforos
 
+//Função que inicia os semaforos
 void sem_initializer(){
 	sem_unlink("shared");
 	sem_unlink("counter");
@@ -75,6 +60,7 @@ void sem_initializer(){
 	sem_unlink("go");
 	sem_unlink("run");
 	sem_unlink("times");
+	sem_unlink("adicional");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	if (sem_shared == SEM_FAILED) {
 		log_message("ERROR OPENING SEM_SHARED");
@@ -127,6 +113,11 @@ void sem_initializer(){
 	}
 	sem_times = sem_open("times",O_CREAT|O_EXCL, 0777,1);
 	if (sem_times == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_TIMES");
+    	exit(1);
+	}
+	sem_adicional = sem_open("adicional",O_CREAT|O_EXCL, 0777,1);
+	if (sem_adicional == SEM_FAILED) {
 		log_message("ERROR OPENING SEM_TIMES");
     	exit(1);
 	}
@@ -197,7 +188,6 @@ bool validate_config(char* filename) {
 //------------------Função que lida com o uso do ^C----------------------
 void signal_handler(){
 	if(getpid() == system_manager_pid){
-		printf("handle done\n");
 		free_shared();
 		exit(0);
 	}
@@ -229,6 +219,8 @@ void free_shared(){
 	if(sem_unlink("flag") == -1) log_message("ERROR DESTROYING SEM\n");
 	if(sem_close(sem_run) == -1) log_message("ERROR CLOSING SEM\n");
 	if(sem_unlink("run") == -1) log_message("ERROR DESTROYING SEM\n");
+	if(sem_close(sem_adicional) == -1) log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("adicional") == -1) log_message("ERROR DESTROYING SEM\n");
 
 	if(shmdt(shared) == -1) log_message("ERROR DETACHING SHARED MEMORY\n");
 	if(shmctl(shm_id, IPC_RMID, NULL) == -1) log_message("ERROR REMOVING SHARED MEMORY\n");
@@ -250,7 +242,7 @@ void free_shared(){
 //#########################################################################################
 void init_prog() {
 
-	int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * (config.max_auth_servers +1) + sizeof(stats_struct) + sizeof(int) *2 +sizeof(bool);
+	int shm_size = sizeof(shm) + sizeof(users_) * config.max_mobile_user + sizeof(int) * (config.max_auth_servers +1) + sizeof(stats_struct) + sizeof(int) *2 +sizeof(bool) + sizeof(int);
 
     if ((shm_id = shmget(IPC_PRIVATE, shm_size, IPC_CREAT | IPC_EXCL | 0700)) < 0) {
         log_message("ERROR IN SHMGET");
@@ -284,6 +276,7 @@ void init_prog() {
     }
 
 	shared->run = true;
+	shared->adicional = 0;
 
 	signal(SIGINT, signal_handler);
 
@@ -513,8 +506,14 @@ void process_message_from_pipe(char * msg){
 				sem_post(sem_go);
                 log_message("MESSAGE ADDED TO VIDEO QUEUE.");
             }else{
-				full = true; adicional = 1;
-                log_message("VIDEO QUEUE IS FULL, DISCARDING...");
+				log_message("VIDEO QUEUE IS FULL, DISCARDING...");
+				sem_wait(sem_adicional);
+				if(shared->adicional == 0 ){
+					shared->adicional = 1;
+					sem_post(sem_adicional); 
+					log_message("EXTRA AUTHORIZATION ENGINE ACTIVATED.");
+				}
+				sem_post(sem_adicional);
             }
         }else{
             if(countUsers(q_other,mut_other) < config.queue_slot_number){//ver se chegou ao limite na fila
@@ -523,8 +522,14 @@ void process_message_from_pipe(char * msg){
 				sem_post(sem_go);
                 log_message("MESSAGE ADDED TO OTHERS QUEUE.");
             }else{
-				full = true; adicional = 1;
-                log_message("OTHER QUEUE IS FULL, DISCARDING...");
+				log_message("OTHER QUEUE IS FULL, DISCARDING...");
+				sem_wait(sem_adicional);
+				if(shared->adicional == 0 ){
+					shared->adicional = 1;
+					sem_post(sem_adicional); 
+					log_message("EXTRA AUTHORIZATION ENGINE ACTIVATED.");
+				}
+				sem_post(sem_adicional);
             }
         }
     }else if((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
@@ -534,8 +539,14 @@ void process_message_from_pipe(char * msg){
 			sem_post(sem_go);
             log_message("MESSAGE ADDED TO OTHERS QUEUE.(LOGIN)\n");
         }else{
-			full = true; adicional = 1;
-            log_message("OTHER QUEUE IS FULL, DISCARDING...");
+			log_message("OTHER QUEUE IS FULL, DISCARDING...");
+			sem_wait(sem_adicional);
+				if(shared->adicional == 0 ){
+					shared->adicional = 1;
+					sem_post(sem_adicional); 
+					log_message("EXTRA AUTHORIZATION ENGINE ACTIVATED.");
+				}
+			sem_post(sem_adicional);
         }
     }else{
         log_message("MOBILE USER SENT WRONG PARAMETERS.");
@@ -565,18 +576,18 @@ void *sender_function(void *arg) {
 }
 
 void check_full(queue *head, pthread_mutex_t sem){
-	if (full){
-		adicional = 1;
-	}else if(countUsers(head, sem) <= config.queue_slot_number/2){
-		full = false;
-		adicional = 0;
+	sem_wait(sem_adicional);
+	if(countUsers(head, sem) <= config.queue_slot_number/2){
+		shared-> adicional = 0;
 	}
+	sem_post(sem_adicional);
 }
 
 void process_queue_item(queue **q, pthread_mutex_t mut,int type) {
     bool found = false;
+	sem_wait(sem_adicional);
 	sem_wait(sem_read_count);
-    for (int i = 0; i < config.max_auth_servers + adicional; i++) {
+    for (int i = 0; i < config.max_auth_servers + shared->adicional; i++) {
         if (shared->read_count_shared[i] == 0) {
             shared->read_count_shared[i] = 1;
 			sem_post(sem_read_count);
@@ -585,6 +596,7 @@ void process_queue_item(queue **q, pthread_mutex_t mut,int type) {
             break;
         }
     }
+	sem_post(sem_adicional);
     if (!found) {
         sem_post(sem_read_count);
         log_message("No available auth engines, waiting...");
@@ -963,7 +975,6 @@ void signal_handler3(){
 	if(getpid()== pid_mon){
 		if(pthread_cancel(mobile_thread) != 0) printf("ERROR CLOSING MOBILE_THREAD\n");
 		if(pthread_cancel(back_thread) != 0) printf("ERROR CLOSING MOBILE_THREAD\n");
-		printf("handle 3 done\n");
 	}
 	exit(0);
 }

@@ -80,6 +80,7 @@ typedef struct shm{
 	int mobile_users;		 //numero de mobile users registados
 	int flag; 				//saber quando o mobile user nao conseguiu dar login pela fila estar cheia
 	bool run;
+	int adicional;
 	stats_struct stats;      //stats do backoffice_user
 }shm;
 
@@ -99,7 +100,7 @@ sem_t *sem_flag;
 sem_t *sem_go;
 sem_t *sem_run;
 sem_t *sem_times; //controlar a quantidade de vezes que enviamos mensagens para o mobile user
-
+sem_t *sem_adicional;
 
 typedef struct queue{
 	char message[MAX_STRING_SIZE];
