@@ -236,13 +236,13 @@ void free_shared(){
 	if(sem_close(sem_run) == -1) log_message("ERROR CLOSING SEM\n");
 	if(sem_unlink("run") == -1) log_message("ERROR DESTROYING SEM\n");
 
+	if(unlink(USER_PIPE) == -1) log_message("ERROR UNLINKING USER_PIPE\n");
+	if(unlink(BACK_PIPE) == -1) log_message("ERROR UNLINKING BACK_PIPE\n");
 	if(fcntl(fd_read_back,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_BACK\n");
 	if(close(fd_read_back) == -1) log_message("ERROR CLOSING PIPE FD_READ_BACK\n");
 	if(fcntl(fd_read_user,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_USER\n");
 	if(close(fd_read_user) == -1) log_message("ERROR CLOSING PIPE FD_READ_USER\n");
-	if(unlink(USER_PIPE) == -1) log_message("ERROR UNLINKING USER_PIPE\n");
-	if(unlink(BACK_PIPE) == -1) log_message("ERROR UNLINKING BACK_PIPE\n");
-	if(shmdt(&shm_id) == -1) log_message("ERROR DETACHING SHARED MEMORY\n");
+	if(shmdt(shared) == -1) log_message("ERROR DETACHING SHARED MEMORY\n");
 	if(shmctl(shm_id, IPC_RMID, NULL) == -1) log_message("ERROR REMOVING SHARED MEMORY\n");
 	if(remove(MSQ_FILE) == -1) log_message("ERROR REMOVING MESSAGE QUEUE\n");
 	if(msgctl(mqid, IPC_RMID, 0) != 0) log_message("ERROR DELETING MESSAGE QUEUE\n");
@@ -438,12 +438,12 @@ void *receiver_function(void *arg){
     log_message("BACK_PIPE FOR READING IS OPEN!");
     
     int cont=0;
-    char good_msg[MAX_STRING_SIZE] = {0};
     char buf[MAX_STRING_SIZE];
 	sem_wait(sem_run);
     while(shared->run){
 		sem_post(sem_run);
         fd_set read_set;
+		memset(buf, 0, MAX_STRING_SIZE);
         FD_ZERO(&read_set);
 
         FD_SET(fd_read_user, &read_set);
@@ -453,17 +453,18 @@ void *receiver_function(void *arg){
             if (FD_ISSET(fd_read_user, &read_set)) {
                 ssize_t n = read(fd_read_user, buf, MAX_STRING_SIZE);
                 if (n > 0) {
+					printf("DEBUG: %s\n", buf);
 					char* dados = malloc(n +1);
 					memcpy(dados, buf, n);
 					dados[n] = '\0';
                     char *segment = strtok(dados, ";");
 					while (segment != NULL) {
                         printf("\n\nRECEIVED: %s [%d]\n\n", segment, ++cont);
-                        process_message_from_pipe(segment);
+                        //process_message_from_pipe(segment);
                         segment = strtok(NULL, ";");
                     }
                 }
-            }else log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
+            }
         }if(FD_ISSET(fd_read_back,&read_set)){
 			char buf[MAX_STRING_SIZE];
 			int n=read(fd_read_back, buf, MAX_STRING_SIZE);
@@ -767,7 +768,7 @@ void manage_auth(char *buf){
             shared->stats.total_music = 0;
             shared->stats.music_req = 0;
             shared->stats.video_req = 0;
-            shared->stats.video_req = 0;
+            shared->stats.social_req = 0;
             sem_post(sem_statics);
             log_message("STATS RESETED!\n");
         }else{
@@ -862,30 +863,24 @@ char *rem_queue(queue **head, pthread_mutex_t sem,int type) {
 
 void destroyQueue(queue **head) {
     if (head == NULL || *head == NULL) return;  // Check if the queue pointer or head is NULL
-
     queue *current = *head;  // Start with the head of the queue
     queue *next;
-
     while (current != NULL) {  // Traverse each node until the end
         next = current->next;  // Store the next node
         free(current);         // Free the current node
         current = next;        // Move to the next node
     }
-
     *head = NULL;  // After all nodes are freed, reset the head to NULL
 }
-
 
 //----------------Verifica se a Fila está Vazia----------------------
 int is_empty(queue *head, pthread_mutex_t sem,char tipo[MAX_STRING_SIZE]){  //1 se está vazia, 0 tem elementos
     pthread_mutex_lock(&sem);
     if(head==NULL){
         pthread_mutex_unlock(&sem);
-        //print_queue(head, sem,tipo); 
         return 1;
     }else{
         pthread_mutex_unlock(&sem);
-        //print_queue(head, sem, tipo); 
         return 0;
     }
 }
@@ -907,20 +902,17 @@ void print_queue(queue *head, pthread_mutex_t sem, char tipo[MAX_STRING_SIZE]) {
 }
 
 int countUsers(queue *head, pthread_mutex_t sem) {
-    int count = 0;  // Inicializa contador
+    int count = 0;
     pthread_mutex_lock(&sem);
-    queue *current = head;  // Começa pelo primeiro nó da fila
+    queue *current = head;
 
-    // Percorre a lista até o final
     while (current != NULL) {
-        count++;  // Incrementa o contador para cada nó encontrado
-        current = current->next;  // Move para o próximo nó
+        count++;
+        current = current->next;
     }
     pthread_mutex_unlock(&sem);
-    return count;  // Retorna o número total de nós
+    return count;
 }
-
-//MONITOR ENGINE
 
 void monitor_engine(){
     log_message("PROCESS MONITOR_ENGINE CREATED");
@@ -931,26 +923,22 @@ void monitor_engine(){
         free_shared();
         exit(0);
     }
-
     if (pthread_create(&back_thread, NULL, statics_function, NULL) != 0)
     {
         log_message("CANNOT CREATE BACK_THREAD");
         free_shared();
         exit(0);
     }
-
     if(pthread_join(mobile_thread, NULL)!= 0){
         log_message("CANNOT JOIN MOBILE THREAD");
         free_shared();
         exit(1);
     }
-
     if(pthread_join(back_thread, NULL)!= 0){
         log_message("CANNOT JOIN BACK THREAD");
         free_shared();
         exit(1);
     }
-
 } 
 
 void *plafond_function(){
@@ -980,26 +968,20 @@ void *plafond_function(){
 					log_message(log_msg);
 
 					if(plafond_gasto == 1 ){
-						
 						monitor.id= (long)shared->user_array->id;
 						strcpy(monitor.msg, PLA_100);
 						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
 						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-
 					}else if(plafond_gasto > 0.9){
-
 						monitor.id= (long)shared->user_array->id;
 						strcpy(monitor.msg, PLA_90);
 						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
 						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-
 					}else if(plafond_gasto > 0.8){
-
 						monitor.id= (long)shared->user_array->id;
 						strcpy(monitor.msg, PLA_80);
 						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
 						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-
 					}
 				}
 			}
@@ -1032,7 +1014,6 @@ void *statics_function(){
 	sem_post(sem_run);
     return NULL;
 }
-
 
 int get_msg_id(){
     int msqid;

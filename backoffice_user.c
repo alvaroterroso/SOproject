@@ -42,18 +42,22 @@ int main(int argc, char **argv){
             printf("Command not accepeted! Usage: <1#data_stats> or <1#reset>\n");
         }
     }
+	wait(NULL);
 }
 
 void signal_handle(){
 	printf("BACKOFFICE AS ENDED\n"),
-	run = 0;
 	close(fd_write);
+	wait(NULL);
 	exit(0);
 }
 
 void ler_mq(){
     while(1){
-        msgrcv(mq,&back_msg_rcv,sizeof(back_msg_rcv)-sizeof(long),(long)1,0);
+        if(msgrcv(mq,&back_msg_rcv,sizeof(back_msg_rcv)-sizeof(long),(long)1,0) == -1){
+			printf("System Manager is down...\n");
+			signal_handle();
+		};
         printf("MENSAGEM RECEBIDA:\n%s",back_msg_rcv.msg);
     }
 }

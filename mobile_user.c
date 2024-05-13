@@ -52,7 +52,7 @@ int main(int argc, char **argv){
 		if(logged == 0){
 			//register message
 			memset(log_msg,0,sizeof(log_msg));
-			snprintf(log_msg, sizeof(log_msg), "%d#%d",new_mobile_user.id, new_mobile_user.init_plafond);
+			snprintf(log_msg, sizeof(log_msg), "%d#%d;",new_mobile_user.id, new_mobile_user.init_plafond);
 
 			printf("mensagem mobile: %s\n",log_msg);
 
