@@ -121,6 +121,11 @@ void sem_initializer(){
 		log_message("ERROR OPENING SEM_TIMES");
     	exit(1);
 	}
+	sem_processing = sem_open("processing",O_CREAT|O_EXCL, 0777,1);
+	if (sem_processing == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_TIMES");
+    	exit(1);
+	}
 }
 
 //------------Função de verificação dos parametros-------------
@@ -221,6 +226,8 @@ void free_shared(){
 	if(sem_unlink("run") == -1) log_message("ERROR DESTROYING SEM\n");
 	if(sem_close(sem_adicional) == -1) log_message("ERROR CLOSING SEM\n");
 	if(sem_unlink("adicional") == -1) log_message("ERROR DESTROYING SEM\n");
+	if(sem_close(sem_processing) == -1) log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("processing") == -1) log_message("ERROR DESTROYING SEM\n");
 
 	if(shmdt(shared) == -1) log_message("ERROR DETACHING SHARED MEMORY\n");
 	if(shmctl(shm_id, IPC_RMID, NULL) == -1) log_message("ERROR REMOVING SHARED MEMORY\n");
@@ -465,13 +472,12 @@ void *receiver_function(void *arg){
                     char *segment = strtok(dados, ";");
 					while (segment != NULL) {
                         printf("\n\nRECEIVED: %s [%d]\n\n", segment, ++cont);
-						//pthread_mutex_lock(&mut_check);
                         process_message_from_pipe(segment);
-						//pthread_mutex_lock(&mut_check);
                         segment = strtok(NULL, ";");
                     }
 					free(segment);
                 }
+				FD_CLR(fd_read_user, &read_set);
             }
 			if(FD_ISSET(fd_read_back,&read_set)){
 				char buf[MAX_STRING_SIZE];
@@ -779,10 +785,9 @@ void manage_auth(char *buf){
 			if(shared->user_array[user_index].plafond < atoi(part3)){
 				sprintf(log_msg,"MOBILE USER [%s] DOESNT HAVE ENOUGH PLAFOND TO CONTINUE...",part1);
 				log_message(log_msg);
+				shared->user_array[user_index].plafond = 0;
 				sem_post(sem_plafond);
-				sem_wait(sem_flag);
-				flag=atoi(part1);
-				sem_post(sem_flag);
+				sem_post(sem_monitor);
 			}else{
 				shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
 				sem_post(sem_plafond);
@@ -985,6 +990,7 @@ void *plafond_function(){
 		sem_wait(sem_flag);
 		if(flag!=0){//se a flag por diferente de 0, é porque houve um user que nao conseguiu dar login, e a flag tem o seu id para eu saber que type usar na mensagem
 			plafond_msg monitor;
+			printf("\n\nVALOR DA FLAG: %d\n",flag);
 			monitor.id = (long)flag;
 			flag=0;
 			sem_post(sem_flag);

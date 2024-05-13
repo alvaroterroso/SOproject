@@ -28,7 +28,7 @@
 #define BACK_PIPE "/tmp/BACK_PIPE"
 #define MSQ_FILE "msq_id.txt"
 
-#define MAX_STRING_SIZE 215
+#define MAX_STRING_SIZE 256
 
 #define FILENAME "log.txt"
 
@@ -101,6 +101,7 @@ sem_t *sem_go;
 sem_t *sem_run;
 sem_t *sem_times; //controlar a quantidade de vezes que enviamos mensagens para o mobile user
 sem_t *sem_adicional;
+sem_t * sem_processing;
 
 typedef struct queue{
 	char message[MAX_STRING_SIZE];
@@ -128,7 +129,7 @@ int shm_readcount;
 char filename[MAX_STRING_SIZE];
 
 //log file
-char log_msg[MAX_STRING_SIZE]; // fazer antes malloc para dar free no fim, so ainda n fiz isso pq ns onde dar o free
+char log_msg[MAX_STRING_SIZE]; 
 
 //config file
 config_struct config;
