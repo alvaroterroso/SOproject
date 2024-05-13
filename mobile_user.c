@@ -219,7 +219,6 @@ void read_mq(){
 	}
 }
 
-
 int get_msg_id(){
     int msqid;
     FILE *fp = fopen(MSQ_FILE, "r");
@@ -228,7 +227,7 @@ int get_msg_id(){
         exit(1);
     }
     if (fscanf(fp, "%d", &msqid) != 1) {
-        perror("Error reading msqid from file");
+        perror("Error reading msqid frosm file");
         exit(1);
     }
     fclose(fp);

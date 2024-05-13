@@ -14,6 +14,7 @@ VER SE ESTÁ CERTO:
 pthread_mutex_t mut_video = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_other = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 pthread_mutex_t mut_monitor = PTHREAD_MUTEX_INITIALIZER;   // Definição real
+//pthread_mutex_t mut_check = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 //pthread_mutex_t mut_cond = PTHREAD_MUTEX_INITIALIZER;   // Definição real
 //pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
@@ -196,6 +197,7 @@ bool validate_config(char* filename) {
 //------------------Função que lida com o uso do ^C----------------------
 void signal_handler(){
 	if(getpid() == system_manager_pid){
+		printf("handle done\n");
 		free_shared();
 		exit(0);
 	}
@@ -209,12 +211,7 @@ void free_shared(){
 	shared->run = 0;
 	sem_post(sem_run);
 	
-	while(wait(NULL)>0);
-
-	destroyQueue(&q_video);
-	destroyQueue(&q_other);
-	pthread_mutex_destroy(&mut_video);
-	pthread_mutex_destroy(&mut_other);
+	wait(NULL);
 	
 	if(sem_close(sem_statics) == -1) log_message("ERROR CLOSING SEM\n");
 	if(sem_unlink("statics") == -1) log_message("ERROR DESTROYING SEM\n");
@@ -237,7 +234,15 @@ void free_shared(){
 	if(shmctl(shm_id, IPC_RMID, NULL) == -1) log_message("ERROR REMOVING SHARED MEMORY\n");
 	if(remove(MSQ_FILE) == -1) log_message("ERROR REMOVING MESSAGE QUEUE\n");
 	if(msgctl(mqid, IPC_RMID, 0) != 0) log_message("ERROR DELETING MESSAGE QUEUE\n");
+
+	destroyQueue(&q_video);
+	destroyQueue(&q_other);
+	pthread_mutex_destroy(&mut_video);
+	pthread_mutex_destroy(&mut_other);
+
 	log_message("ALL CLEANED, GOODBYE\n");
+	kill(0,SIGTERM);
+	exit(0);
 }
 
 //#########################################################################################
@@ -344,21 +349,18 @@ void create_proc(){
 //####################################################################################
 void auth_request_manager(){
 	pid_auth = getpid();
-	signal(SIGINT, signal_handler2);
 	log_message("PROCESS AUTHORIZATION_REQUEST_MANAGER CREATED");
-
+	signal(SIGINT, signal_handler2);
 	create_unnamed_pipes();
 	create_pipes(USER_PIPE);
 	create_pipes(BACK_PIPE);
 
 	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0){
 		log_message("CANNOT CREATE SENDER_THREAD");
-		free_shared();
 		exit(1);
 	}
 	if (pthread_create(&receiver_thread, NULL, receiver_function, NULL) != 0){
 		log_message("CANNOT CREATE RECEIVER_THREAD");
-		free_shared();
 		exit(1);
 	}
 
@@ -366,31 +368,35 @@ void auth_request_manager(){
 
 	if(pthread_join(receiver_thread, NULL)!= 0){
 		log_message("CANNOT JOIN RECEIVER_THREAD");
-		free_shared();
 		exit(1);
 	}
 	if(pthread_join(sender_thread, NULL)!= 0){
 		log_message("CANNOT JOIN SENDER_THREAD");
-		free_shared();
 		exit(1);
 	}
 }
 
 void signal_handler2(){
 	if(getpid()==pid_auth){
-		pthread_cancel(receiver_thread);
-		pthread_cancel(sender_thread);
 		while(wait(NULL)>0);
 		for(int i = 0; i < config.max_auth_servers; i ++){
 			close(pipes[i][0]);
 		}
-		
+
+		free(autho_engines_pid);
+		free(pipes);
+
+		if(pthread_cancel(receiver_thread) < 0) printf("ERROR CANCELING RECEIVER THREAD\n");
+		if(pthread_cancel(sender_thread) < 0) printf("ERROR CANCELING SENDER THREAD\n");
+		printf("in\n");
 		if(unlink(USER_PIPE) == -1) log_message("ERROR UNLINKING USER_PIPE\n");
 		if(unlink(BACK_PIPE) == -1) log_message("ERROR UNLINKING BACK_PIPE\n");
 		if(fcntl(fd_read_back,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_BACK\n");
 		if(close(fd_read_back) == -1) log_message("ERROR CLOSING PIPE FD_READ_BACK\n");
 		if(fcntl(fd_read_user,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_USER\n");
 		if(close(fd_read_user) == -1) log_message("ERROR CLOSING PIPE FD_READ_USER\n");
+		printf("handle 2 done\n");
+		exit(0);
 	}
 }
 
@@ -417,7 +423,6 @@ void create_unnamed_pipes(){
         pipes[i] = malloc(2 * sizeof(int)); // Cada sub-array contém dois inteiros
         if (pipes[i] == NULL) {
             log_message("Falha na alocação de memória para sub-array de pipes");
-			free_shared();
 			exit(1);
         }
         if (pipe(pipes[i]) == -1) { // Criar o pipe
@@ -436,14 +441,12 @@ void *receiver_function(void *arg){
 
     if ((fd_read_user= open(USER_PIPE, O_RDWR)) < 0){ //opening user for reading
         log_message("ERROR OPENING USER_PIPE FOR READING!");
-        free_shared();
         exit(1);
     }
     log_message("USER_PIPE FOR READING IS OPEN!");
 
     if ((fd_read_back= open(BACK_PIPE,  O_RDWR)) < 0){//opening user for reading
         log_message("ERROR OPENING BACK_PIPE FOR READING!");
-        free_shared();
         exit(1);
     }
     log_message("BACK_PIPE FOR READING IS OPEN!");
@@ -469,9 +472,12 @@ void *receiver_function(void *arg){
                     char *segment = strtok(dados, ";");
 					while (segment != NULL) {
                         printf("\n\nRECEIVED: %s [%d]\n\n", segment, ++cont);
+						//pthread_mutex_lock(&mut_check);
                         process_message_from_pipe(segment);
+						//pthread_mutex_lock(&mut_check);
                         segment = strtok(NULL, ";");
                     }
+					free(segment);
                 }
             }
 			if(FD_ISSET(fd_read_back,&read_set)){
@@ -936,32 +942,30 @@ void monitor_engine(){
     if (pthread_create(&mobile_thread, NULL, plafond_function, NULL) != 0)
     {
         log_message("CANNOT CREATE SENDER_THREAD");
-        free_shared();
         exit(0);
     }
     if (pthread_create(&back_thread, NULL, statics_function, NULL) != 0)
     {
         log_message("CANNOT CREATE BACK_THREAD");
-        free_shared();
         exit(0);
     }
     if(pthread_join(mobile_thread, NULL)!= 0){
         log_message("CANNOT JOIN MOBILE THREAD");
-        free_shared();
         exit(1);
     }
     if(pthread_join(back_thread, NULL)!= 0){
         log_message("CANNOT JOIN BACK THREAD");
-        free_shared();
         exit(1);
     }
 } 
 
 void signal_handler3(){
 	if(getpid()== pid_mon){
-		pthread_cancel(mobile_thread);
-		pthread_cancel(back_thread);
+		if(pthread_cancel(mobile_thread) != 0) printf("ERROR CLOSING MOBILE_THREAD\n");
+		if(pthread_cancel(back_thread) != 0) printf("ERROR CLOSING MOBILE_THREAD\n");
+		printf("handle 3 done\n");
 	}
+	exit(0);
 }
 
 void *plafond_function(){
