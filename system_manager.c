@@ -123,13 +123,7 @@ void sem_initializer(){
 		log_message("ERROR OPENING SEM_RUN");
     	exit(1);
 	}
-	sem_times = sem_open("times",O_CREAT|O_EXCL, 0777,1);
-	if (sem_run == SEM_FAILED) {
-		log_message("ERROR OPENING SEM_TIMES");
-    	exit(1);
-	}
 }
-
 
 //------------Função de verificação dos parametros-------------
 bool validate_config(char* filename) {
@@ -141,7 +135,6 @@ bool validate_config(char* filename) {
     }
     int aux;
 
-	//Read MAX_MOBILE_USER
 	if (fscanf(f, "%d", &aux) < 1 || aux < 0) {
         snprintf(log_msg, sizeof(log_msg), "Error reading %s: MAX_MOBILE_USER %d must be >= 0", filename, aux);
         log_message(log_msg);
@@ -150,7 +143,6 @@ bool validate_config(char* filename) {
     }
     config.max_mobile_user = aux;
 
-    //Read QUEUE_POS
     if (fscanf(f, "%d", &aux) < 1 || aux < 0) {
         snprintf(log_msg, sizeof(log_msg), "Error reading %s: QUEUE_POS %d must be >= 0", filename, aux);
         log_message(log_msg);
@@ -159,7 +151,6 @@ bool validate_config(char* filename) {
     }
     config.queue_slot_number = aux;
 
-    //Read AUTH_SERVERS_MAX
     if (fscanf(f, "%d", &aux) < 1 || aux < 1) {
         snprintf(log_msg, sizeof(log_msg), "Error reading %s: AUTH_SERVERS_MAX %d must be >= 1", filename, aux);
         log_message(log_msg);
@@ -168,7 +159,6 @@ bool validate_config(char* filename) {
     }
     config.max_auth_servers = aux;
 
-    //Read AUTH_PROC_TIME
     if (fscanf(f, "%d", &aux) < 1 || aux < 0) {
         snprintf(log_msg, sizeof(log_msg), "Error reading %s: AUTH_PROC_TIME %d must be >= 0", filename, aux);
         log_message(log_msg);
@@ -177,7 +167,6 @@ bool validate_config(char* filename) {
     }
     config.auth_proc_time = aux;
 
-    //Read MAX_VIDEO_WAIT
     if (fscanf(f, "%d", &aux) < 1 || aux < 1) {
         snprintf(log_msg, sizeof(log_msg), "Error reading %s: MAX_VIDEO_WAIT %d must be >= 1", filename, aux);
         log_message(log_msg);
@@ -186,7 +175,6 @@ bool validate_config(char* filename) {
     }
     config.max_video_wait = aux;
 
-    //Read MAX_OTHERS_WAIT
     if (fscanf(f, "%d", &aux) < 1 || aux < 1) {
         snprintf(log_msg, sizeof(log_msg), "Error reading %s: MAX_OTHERS_WAIT %d must be >= 1", filename, aux);
         log_message(log_msg);
@@ -201,76 +189,64 @@ bool validate_config(char* filename) {
 
 //------------------Função que lida com o uso do ^C----------------------
 void signal_handler(){
-	free_shared();
-	kill(0, SIGTERM); // kills all processes
-	exit(0);
+	if(getpid() == system_manager_pid){
+		free_shared();
+		kill(0, SIGTERM);
+		exit(0);
+	};
 }
 
 //-----------------Função que destroi semaforos, mutex, shared memory e message queue-----------------------
 void free_shared(){
+	log_message("SYSTEM SHUTTING DOWN, CLEANING ALL RESOURCES...\n");
 	sem_wait(sem_run);
 	shared->run = 0;
 	sem_post(sem_run);
-	printf("OLA\n");
-	//pthread_cancel(receiver_thread);
 	pthread_join(receiver_thread,NULL);
-	//pthread_cancel(sender_thread);
 	pthread_join(sender_thread,NULL);
-	printf("OLA1\n");
-	close(fd_read_back);
-	close(fd_read_user);
-	printf("OLA2\n");
-	unlink(BACK_PIPE);
-	unlink(USER_PIPE);
-	printf("OLA3\n");
+	//ACHO QUE PODEMOS TIRAR ISTO 
+	/*
 	for(int i = 0; i < config.max_auth_servers; i ++){
+		printf("in\n");
 		close(pipes[i][0]);
 		close(pipes[i][1]);
 	}
-	printf("OLA4\n");
-	//pthread_cancel(mobile_thread);
+	*/
 	pthread_join(mobile_thread,NULL);
-	//pthread_cancel(back_thread);
 	pthread_join(back_thread,NULL);
-	printf("OLA5\n");
 	destroyQueue(&q_video);
 	destroyQueue(&q_other);
-	sem_destroy(sem_shared);
-	sem_destroy(sem_userscount);
-	sem_destroy(sem_read_count);
-	sem_destroy(sem_plafond);
-	sem_destroy(sem_statics);
-	sem_destroy(sem_monitor);
-	sem_destroy(sem_flag);
-	sem_destroy(sem_go);
-	sem_destroy(sem_run);
-	printf("OLA7\n");
 	pthread_mutex_destroy(&mut_video);
 	pthread_mutex_destroy(&mut_other);
-	sem_unlink("statics");
-	sem_unlink("shared");
-	sem_unlink("counter");
-	sem_unlink("read_count");
-	sem_unlink("plafond");
-	sem_unlink("video");
-	sem_unlink("other");
-	sem_unlink("monitor");
-	sem_unlink("flag");
-	sem_unlink("run");
-	printf("OLA8\n");
-	fcntl(fd_read_back,F_GETFL);
-	close(fd_read_back);
-	fcntl(fd_read_user,F_GETFL);
-	close(fd_read_user);
-	unlink(USER_PIPE);
-	unlink(BACK_PIPE);
-	printf("OLA9\n");
-	shmdt(&shm_id);
-	shmctl(shm_id, IPC_RMID, NULL);
-	printf("OLA10\n");
-	remove(MSQ_FILE);
-	msgctl(mqid, IPC_RMID, 0); //DONE
+	
+	if(sem_close(sem_statics) == -1) log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("statics") == -1) log_message("ERROR DESTROYING SEM\n");
+	if(sem_close(sem_shared) == -1) log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("shared") == -1) log_message("ERROR DESTROYING SEM\n");
+	if(sem_close(sem_userscount) == -1) log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("counter") == -1) log_message("ERROR DESTROYING SEM\n");
+	if(sem_close(sem_read_count) == -1) log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("read_count") == -1) log_message("ERROR DESTROYING SEM\n");
+	if(sem_close(sem_plafond) == -1) log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("plafond") == -1) log_message("ERROR DESTROYING SEM\n");
+	if(sem_close(sem_monitor) == -1)log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("monitor") == -1) log_message("ERROR DESTROYING SEM\n");
+	if(sem_close(sem_flag) == -1) log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("flag") == -1) log_message("ERROR DESTROYING SEM\n");
+	if(sem_close(sem_run) == -1) log_message("ERROR CLOSING SEM\n");
+	if(sem_unlink("run") == -1) log_message("ERROR DESTROYING SEM\n");
 
+	if(fcntl(fd_read_back,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_BACK\n");
+	if(close(fd_read_back) == -1) log_message("ERROR CLOSING PIPE FD_READ_BACK\n");
+	if(fcntl(fd_read_user,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_USER\n");
+	if(close(fd_read_user) == -1) log_message("ERROR CLOSING PIPE FD_READ_USER\n");
+	if(unlink(USER_PIPE) == -1) log_message("ERROR UNLINKING USER_PIPE\n");
+	if(unlink(BACK_PIPE) == -1) log_message("ERROR UNLINKING BACK_PIPE\n");
+	if(shmdt(&shm_id) == -1) log_message("ERROR DETACHING SHARED MEMORY\n");
+	if(shmctl(shm_id, IPC_RMID, NULL) == -1) log_message("ERROR REMOVING SHARED MEMORY\n");
+	if(remove(MSQ_FILE) == -1) log_message("ERROR REMOVING MESSAGE QUEUE\n");
+	if(msgctl(mqid, IPC_RMID, 0) != 0) log_message("ERROR DELETING MESSAGE QUEUE\n");
+	log_message("ALL CLEANED, GOODBYE\n");
 }
 
 //#########################################################################################
@@ -301,7 +277,6 @@ void init_prog() {
         shared->user_array[i].id = -1;  
         shared->user_array[i].plafond = -1;  
         shared->user_array[i].plafond_ini = -1;  
-		shared->user_array[i].times = 0;
     }
 
     // Inicializar array read_count_shared diretamente
@@ -312,10 +287,8 @@ void init_prog() {
 
 	shared->run = true;
 
+	signal(SIGINT, signal_handler);
 
-	signal(SIGINT, signal_handler);//HANDLE CTRL-C
-
-	// Inicializar struct_stats na message queue
 	shared->stats.total_music = 0;
 	shared->stats.total_video = 0;
 	shared->stats.total_social = 0;
@@ -380,21 +353,17 @@ void create_proc(){
 //####################################################################################
 void auth_request_manager(){
 	log_message("PROCESS AUTHORIZATION_REQUEST_MANAGER CREATED");
-	//create pipes
+
 	create_unnamed_pipes();
 	create_pipes(USER_PIPE);
 	create_pipes(BACK_PIPE);
-	//create threads
 
-	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0)
-	{
+	if (pthread_create(&sender_thread, NULL, sender_function, NULL) != 0){
 		log_message("CANNOT CREATE SENDER_THREAD");
 		free_shared();
 		exit(1);
 	}
-
-	if (pthread_create(&receiver_thread, NULL, receiver_function, NULL) != 0)
-	{
+	if (pthread_create(&receiver_thread, NULL, receiver_function, NULL) != 0){
 		log_message("CANNOT CREATE RECEIVER_THREAD");
 		free_shared();
 		exit(1);
@@ -407,13 +376,11 @@ void auth_request_manager(){
 		free_shared();
 		exit(1);
 	}
-
 	if(pthread_join(sender_thread, NULL)!= 0){
 		log_message("CANNOT JOIN SENDER_THREAD");
 		free_shared();
 		exit(1);
 	}
-
 }
 
 //------------------Cria em especifico os nammed pipes--------------------
@@ -442,8 +409,7 @@ void create_unnamed_pipes(){
 			free_shared();
 			exit(1);
         }
-
-        if (pipe(pipes[i]) == -1) { // Criando o pipe
+        if (pipe(pipes[i]) == -1) { // Criar o pipe
             perror("Falha ao criar pipe");
             exit(EXIT_FAILURE);
         }
@@ -485,41 +451,31 @@ void *receiver_function(void *arg){
         int nfds = (fd_read_user > fd_read_back ? fd_read_user : fd_read_back) + 1;
         if(select(nfds,&read_set,NULL,NULL,NULL)>0){
             if (FD_ISSET(fd_read_user, &read_set)) {
-                int n = read(fd_read_user, buf, MAX_STRING_SIZE); //here
-                //printf("Bits lidos -> %d\n", n);
+                ssize_t n = read(fd_read_user, buf, MAX_STRING_SIZE);
                 if (n > 0) {
-                    buf[n] = '\0'; // Ensure the buffer is null-terminated
-                    char *segment = strtok(buf, ";");  // Get the first token
-                    while (segment != NULL) {  // Continue while there are tokens
+					char* dados = malloc(n +1);
+					memcpy(dados, buf, n);
+					dados[n] = '\0';
+                    char *segment = strtok(dados, ";");
+					while (segment != NULL) {
                         printf("\n\nRECEIVED: %s [%d]\n\n", segment, ++cont);
-
-                        // If you need to preserve the original message for further use after modification:
-                        strcpy(good_msg, segment);  // Copy the current segment to good_msg
-                        process_message_from_pipe(good_msg);  // Process the message
-
-                        segment = strtok(NULL, ";");  // Get the next token
+                        process_message_from_pipe(segment);
+                        segment = strtok(NULL, ";");
                     }
                 }
-            }else   log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
-            }
-		if(FD_ISSET(fd_read_back,&read_set))
-		{
-			//mandar para others_queue
+            }else log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
+        }if(FD_ISSET(fd_read_back,&read_set)){
 			char buf[MAX_STRING_SIZE];
 			int n=read(fd_read_back, buf, MAX_STRING_SIZE);
-			//printf("%s\n", buf);
 			if(n>0){
 				add_queue(&q_other,buf, mut_other);
 				sem_post(sem_go);
 				log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
 			}else log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
-		}
-		sem_wait(sem_run);
-    }
-	sem_post(sem_run);
+		}sem_wait(sem_run);
+    }sem_post(sem_run);
     return NULL;
 }
-
 
 void process_message_from_pipe(char * msg){
 
@@ -529,25 +485,21 @@ void process_message_from_pipe(char * msg){
 	part1 = strtok(msg, "#");
 	if (part1 != NULL) {
 		part2 = strtok(NULL, "#");
-	}
-	if (part2 != NULL) {
+	}if (part2 != NULL) {
 		part3 = strtok(NULL, "#");
 	}
-
-    if ((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
-
-        if (strcmp("VIDEO", part2) == 0) {
+    if((verificaS(part1)==2) && (verificaS(part2)==1) && (verificaS(part3)==2)) { // Três partes: ID#TYPE#AMOUNT
+        if(strcmp("VIDEO", part2) == 0) {
             if(countUsers(q_video,mut_video) < config.queue_slot_number){//ver se chegou ao limite na fila
                 check_full(q_video,mut_video);
                 add_queue(&q_video, copia, mut_video);
 				sem_post(sem_go);
-
                 log_message("MESSAGE ADDED TO VIDEO QUEUE.");
             }else{
 				full = true; adicional = 1;
                 log_message("VIDEO QUEUE IS FULL, DISCARDING...");
             }
-        } else {
+        }else{
             if(countUsers(q_other,mut_other) < config.queue_slot_number){//ver se chegou ao limite na fila
                 check_full(q_other,mut_other);
                 add_queue(&q_other, copia, mut_other);
@@ -558,7 +510,7 @@ void process_message_from_pipe(char * msg){
                 log_message("OTHER QUEUE IS FULL, DISCARDING...");
             }
         }
-    } else if ((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
+    }else if((verificaS(part1)== 2) && (verificaS(part2)== 2) && (part3==NULL)) { // Duas partes: ID#AMOUNT
         if(countUsers(q_other,mut_other) < config.queue_slot_number){//ver se chegou ao limite na fila
             check_full(q_other,mut_other);
             add_queue(&q_other, copia, mut_other);
@@ -568,11 +520,10 @@ void process_message_from_pipe(char * msg){
 			full = true; adicional = 1;
             log_message("OTHER QUEUE IS FULL, DISCARDING...");
         }
-    } else {
+    }else{
         log_message("MOBILE USER SENT WRONG PARAMETERS.");
     }
 }
-
 
 //################################################################################################################
 //Função que le os dados das filas, priorizando a fila de VIDEO e reencaminha pelos Unnamed Pipes o conteúdo lido
@@ -581,21 +532,17 @@ void process_message_from_pipe(char * msg){
 void *sender_function(void *arg) {
     (void)arg;
     log_message("THREAD SENDER CREATED");
-
     while (1) {
 		sem_wait(sem_go);
-
         if (!is_empty(q_video, mut_video, "VIDEO")) {
             while (!is_empty(q_video, mut_video,"VIDEO")) {
                 process_queue_item(&q_video, mut_video, 1);
             }
         }
-
         // Processa a fila de "other" a cada ciclo da fila de vídeo
         if (!is_empty(q_other, mut_other, "OTHER")) {
             process_queue_item(&q_other, mut_other, 0);
         }
-
     }
     return NULL;
 }
@@ -629,10 +576,9 @@ void process_queue_item(queue **q, pthread_mutex_t mut,int type) {
 
 //---------------Função que escreve nos Unnamed Pipes-------------
 queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i,int type){
-
 	char msg[MAX_STRING_SIZE];
 	char *temp = rem_queue(&q_some, mut,type);
-
+	char *part1, *part2, *part3;
 	if (temp) {
 		strncpy(msg, temp, MAX_STRING_SIZE);
 		msg[MAX_STRING_SIZE - 1] = '\0'; // Garantir terminação nula
@@ -640,8 +586,6 @@ queue * write_unnamed(queue *q_some, pthread_mutex_t mut, int i,int type){
 		log_message("REQUEST HAS EXCEEDED TIME LIMIT");
 		return q_some;
 	}
-
-	char *part1, *part2, *part3;
 	part1 = strtok(temp, "#");
 	if (part1 != NULL) {
 		part2 = strtok(NULL, "#");
@@ -708,7 +652,10 @@ void read_from_unnamed(int i){
 			if (part2 != NULL) {
 				part3 = strtok(NULL, "#");
 			}
-			if(part3 == NULL){}
+
+			if(count_char_occurrences(message,'#') == 2){
+				add_stats(message);
+			}
 
 			manage_auth(message);	
 
@@ -726,24 +673,18 @@ void read_from_unnamed(int i){
 			}
 
 			sleep(config.auth_proc_time);//durante o sleep o auth engine deve ser visto como indisponivel certo?????????????????????
-
 			sem_wait(sem_read_count);
-
 			shared->read_count_shared[i] = 0;	
-
 			sem_post(sem_read_count);
-
-		}else	log_message("EROR READING FROM UNNAMED PIPE.");
+		}else log_message("EROR READING FROM UNNAMED PIPE.");
 	}
 	sem_post(sem_run);
 	return;
 }
 
-
 void add_stats(char *msg) {
-    //printf("MESSAGE TO GO TO ADD_STATS: %s\n", msg);
 	char token[MAX_STRING_SIZE];
-    char service[MAX_STRING_SIZE];  // Initialize the buffer to zero
+    char service[MAX_STRING_SIZE];
     int plaf = 0;
 	strcpy(token, msg);
 	char *part1, *part2, *part3;
@@ -758,8 +699,6 @@ void add_stats(char *msg) {
 	strcpy(service, part2);
 	plaf = atoi(part3);
 
-
-    //printf("STATS HAVE BEEN UPDATED\n");
     // Compare the service string and update the corresponding statistics
 	sem_wait(sem_statics);
     if (strcmp(service, "VIDEO") == 0) {
@@ -773,7 +712,6 @@ void add_stats(char *msg) {
         shared->stats.social_req += 1;
     }
 	sem_post(sem_statics);
-	//printf("\nSTATS HAVE BEEN UPDATED\n");
 }
 
 //---------------Esta função é responsável por tratar os dados lidos dos Unnamed Pipes----------------
@@ -807,33 +745,22 @@ void manage_auth(char *buf){
         }
         sem_post(sem_userscount);
     }else if(verificaS(part1)==2 && verificaS(part2)==1 && verificaS(part3)==2){//pedido de autorização
-
         int user_index = searchUser(atoi(part1));
         if(user_index == -1){
             log_message("MOBILE USER NOT FOUND.");
         }else{
             sem_wait(sem_plafond);
-			if(shared->user_array[user_index].plafond < atoi(part3)){
-				log_message("MOBILE USER [%d] DOESNT HAVE ENOUGH PLAFOND TO CONTINUE...");
-				sem_post(sem_plafond);
-				sem_wait(sem_flag);
-				flag=atoi(part1);
-				sem_post(sem_flag);
-			}else{
-				shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
-				sem_post(sem_plafond);
-				log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-				sem_post(sem_monitor);
-				if(count_char_occurrences(copia,'#') == 2){
-					add_stats(copia);
-				}
-			}
+            shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
+
+            if(shared->user_array[user_index].plafond < 0)  shared->user_array[user_index].plafond = 0;
+            sem_post(sem_plafond);
+            log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+            sem_post(sem_monitor);
         
         }
     }else if(atoi(part1) == 1) { // mensagem do BACK_OFFICE
 
         if(strcmp(part2, "reset") == 0){
-
             sem_wait(sem_statics);
             shared->stats.total_video = 0;
             shared->stats.total_social = 0;
@@ -1043,7 +970,6 @@ void *plafond_function(){
 		}
 		else{
 			sem_post(sem_flag);
-			log_message("------GOING TO CHECK EVERYONE PLAFOND------\n");
 			for(int i =0; i<config.max_mobile_user; i++){
 				if((shared->user_array[i].id > 1)){
 					plafond_msg monitor;
@@ -1055,38 +981,24 @@ void *plafond_function(){
 
 					if(plafond_gasto == 1 ){
 						
-						sem_wait(sem_times);
-						if(shared->user_array[i].times <= 2){
-							monitor.id= (long)shared->user_array->id;
-							strcpy(monitor.msg, PLA_100);
-							monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-							msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-							shared->user_array[i].times += 1;
-						}
-						sem_post(sem_times);
+						monitor.id= (long)shared->user_array->id;
+						strcpy(monitor.msg, PLA_100);
+						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 
 					}else if(plafond_gasto > 0.9){
 
-						sem_wait(sem_times);
-						if(shared->user_array[i].times <= 1){
-							monitor.id= (long)shared->user_array->id;
-							strcpy(monitor.msg, PLA_90);
-							monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-							msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-							shared->user_array[i].times += 1;
-						}
-						sem_post(sem_times);
+						monitor.id= (long)shared->user_array->id;
+						strcpy(monitor.msg, PLA_90);
+						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 
 					}else if(plafond_gasto > 0.8){
-						sem_wait(sem_times);
-						if(shared->user_array[i].times == 0){
-							monitor.id= (long)shared->user_array->id;
-							strcpy(monitor.msg, PLA_80);
-							monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-							msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-							shared->user_array[i].times += 1;
-						}
-						sem_post(sem_times);
+
+						monitor.id= (long)shared->user_array->id;
+						strcpy(monitor.msg, PLA_80);
+						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 
 					}
 				}

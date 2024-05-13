@@ -3,7 +3,7 @@
 
 #include "mobile_user.h"
 int fd_write;
-
+int logged = 0;
 
 pthread_mutex_t request_number = PTHREAD_MUTEX_INITIALIZER;
 
@@ -46,51 +46,57 @@ int main(int argc, char **argv){
 		clear_resources();
 		exit(1);
 	}
-
-	//register message
-	memset(log_msg,0,sizeof(log_msg));
-	snprintf(log_msg, sizeof(log_msg), "%d#%d",new_mobile_user.id, new_mobile_user.init_plafond);
-
-	printf("mensagem mobile: %s\n",log_msg);
-
-	if((fd_write = open(USER_PIPE, O_WRONLY))<0){
-		printf("CANNOT OPEN PIPE FOR WRITING\n");
-		clear_resources();
-		exit(1);
-	}
-
-	write(fd_write, log_msg, sizeof(log_msg));//login message
 	
+	while(run){
 
-	if (pthread_create(&video_t, NULL, send_video, NULL) != 0){
-		printf("CANNOT CREATE WORKER THREAD\n");
-		exit(1);
+		if(logged == 0){
+			//register message
+			memset(log_msg,0,sizeof(log_msg));
+			snprintf(log_msg, sizeof(log_msg), "%d#%d",new_mobile_user.id, new_mobile_user.init_plafond);
+
+			printf("mensagem mobile: %s\n",log_msg);
+
+			if((fd_write = open(USER_PIPE, O_WRONLY))<0){
+				printf("CANNOT OPEN PIPE FOR WRITING\n");
+				clear_resources();
+				exit(1);
+			}
+
+			write(fd_write, log_msg, sizeof(log_msg));//login message
+
+			logged = 1;
+			memset(log_msg, 0, sizeof(log_msg));
+		}else{
+
+			if (pthread_create(&video_t, NULL, send_video, NULL) != 0){
+				printf("CANNOT CREATE VIDEO THREAD\n");
+				exit(1);
+			}
+			if (pthread_create(&social_t, NULL, send_social, NULL) != 0){
+				printf("CANNOT CREATE SOCIAL THREAD\n");
+				exit(1);
+			}
+			if (pthread_create(&music_t, NULL, send_music, NULL) != 0){
+				printf("CANNOT CREATE MUSIC THREAD\n");
+				exit(1);
+			}
+			
+			pthread_join(video_t,NULL);
+			pthread_join(social_t,NULL);
+			pthread_join(music_t,NULL);
+
+			run = 0;
+
+			kill(son_mq, SIGTERM);  // Envia sinal SIGTERM para o processo filho
+			wait(NULL);
+
+			return 0;
+		}
 	}
-	if (pthread_create(&social_t, NULL, send_social, NULL) != 0){
-		printf("CANNOT CREATE WORKER THREAD\n");
-		exit(1);
-	}
-	if (pthread_create(&music_t, NULL, send_music, NULL) != 0){
-		printf("CANNOT CREATE WORKER THREAD\n");
-		exit(1);
-	}
-	
-	pthread_join(music_t,NULL);
-	pthread_join(video_t,NULL);
-	pthread_join(social_t,NULL);
-
-	run = 0;
-
-	kill(son_mq, SIGTERM);  // Envia sinal SIGTERM para o processo filho
-    wait(NULL);
-
-	return 0;
-
 }
 
 void clear_resources(){
 	pthread_mutex_destroy(&request_number);
-
 }
 
 void signal_handler(){
@@ -110,7 +116,7 @@ void signal_handler(){
 
 void *send_video() {
     while (run) {
-        pthread_mutex_lock(&request_number); 
+		pthread_mutex_lock(&request_number); 
         if (new_mobile_user.auth_request_number <= 0) {
             pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições 
             break; // Sai do loop se não há mais requisições 
@@ -119,7 +125,8 @@ void *send_video() {
 
 			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
 
-			if (bytes_written == -1) {
+			if (bytes_written < 0) {
+				pthread_mutex_unlock(&request_number);
 				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
 			}else {
 				printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
@@ -129,7 +136,8 @@ void *send_video() {
 
 			--new_mobile_user.auth_request_number;
 			pthread_mutex_unlock(&request_number);
-		
+			
+			printf("sleep video: %d\n",new_mobile_user.video_interval );
 			sleep(new_mobile_user.video_interval);
 		}
     }
@@ -138,7 +146,7 @@ void *send_video() {
 
 void *send_music() {
     while (run) {
-        pthread_mutex_lock(&request_number); 
+		pthread_mutex_lock(&request_number); 
         if (new_mobile_user.auth_request_number <= 0) {
             pthread_mutex_unlock(&request_number); // Libera o semáforo se não há mais requisições 
             break; // Sai do loop se não há mais requisições 
@@ -147,7 +155,8 @@ void *send_music() {
 
 			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
 
-			if (bytes_written == -1) {
+			if (bytes_written < 0) {
+				pthread_mutex_unlock(&request_number);
 				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
 			}else {
 				printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
@@ -157,7 +166,8 @@ void *send_music() {
 
 			--new_mobile_user.auth_request_number;
 			pthread_mutex_unlock(&request_number);
-
+			
+			printf("sleep video: %d\n",new_mobile_user.music_interval );
 			sleep(new_mobile_user.music_interval);
 		}
     }
@@ -175,7 +185,8 @@ void *send_social() {
 
 			ssize_t bytes_written  = write(fd_write, log_msg, strlen(log_msg) + 1);  // Envia a mensagem
 
-			if (bytes_written == -1) {
+			if (bytes_written < 0) {
+				pthread_mutex_unlock(&request_number);
 				printf("ERRO A ENVIAR A MENSAGEM PARA O PIPE\n");
 			}else {
 				printf("MENSAGEM A ENVIAR PELO MOBILE USER : %s\n", log_msg);
@@ -186,6 +197,7 @@ void *send_social() {
 			--new_mobile_user.auth_request_number;
 			pthread_mutex_unlock(&request_number);
 			
+			printf("sleep social: %d\n",new_mobile_user.social_interval );
 			sleep(new_mobile_user.social_interval);
 		}
     }
@@ -201,8 +213,7 @@ void read_mq(){
 
 		if (msgrcv(mq, &plafond, sizeof(plafond) - sizeof(long), (long)new_mobile_user.id, 0) == -1){ 
 			printf("System Manager Closing...\n");
-			signal_handler();
-			exit(1);
+			run = 0;
 		} else {
 			if(strcmp(plafond.msg, PLA_80)==0 || strcmp(plafond.msg, PLA_90)==0){
 				printf("MESSAGE FROM SYSTEM MANAGER: %s\n",plafond.msg);

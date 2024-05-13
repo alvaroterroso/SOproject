@@ -26,6 +26,7 @@ int main(int argc, char **argv){
         ler_mq();
         exit(0);
     }
+	signal(SIGINT, signal_handle);
     
     //while para aceitar as coisas
     while(1){
@@ -41,6 +42,13 @@ int main(int argc, char **argv){
             printf("Command not accepeted! Usage: <1#data_stats> or <1#reset>\n");
         }
     }
+}
+
+void signal_handle(){
+	printf("BACKOFFICE AS ENDED\n"),
+	run = 0;
+	close(fd_write);
+	exit(0);
 }
 
 void ler_mq(){

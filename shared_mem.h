@@ -65,7 +65,6 @@ typedef struct users_{//COMENTAR USERS DA SHARED MEM
 	int id;
 	float plafond;
 	float plafond_ini;
-	int times;		//quantidade de vezes que ja mandou mensagens de plafon ao mobile
 }users_;
 
 typedef struct stats_struct{
@@ -98,7 +97,6 @@ sem_t *sem_monitor; //aletar o monitor quando tiver mensagens para ler
 sem_t *sem_flag; 
 sem_t *sem_go;
 sem_t *sem_run;
-sem_t *sem_times; //controlar a quantidade de vezes que enviamos mensagens para o mobile user
 
 
 typedef struct queue{
