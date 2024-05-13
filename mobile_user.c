@@ -78,6 +78,15 @@ int main(int argc, char **argv){
 				printf("CANNOT CREATE MUSIC THREAD\n");
 				exit(1);
 			}
+
+			son_mq = fork();
+			if(son_mq == 0){
+				read_mq();
+				exit(0);
+			}else if(son_mq == -1){
+				printf("Error creating read_mq proc\n");
+				exit(1);
+			}
 			
 			pthread_join(video_t,NULL);
 			pthread_join(social_t,NULL);
@@ -96,20 +105,11 @@ int main(int argc, char **argv){
 
 void signal_handler(){
 	run=0;
-	printf("1\n");
 	pthread_cancel(video_t);
-	pthread_join(video_t,NULL);
-	printf("1,1\n");
 	pthread_cancel(social_t);
-	pthread_join(social_t,NULL);
-	printf("1,2\n");
 	pthread_cancel(music_t);
-	pthread_join(music_t,NULL);
-	printf("2\n");
 	kill(son_mq, SIGTERM);  // Envia sinal SIGTERM para o processo filho
-	printf("3\n");
     wait(NULL);
-	printf("4\n");
 	pthread_mutex_destroy(&request_number);
 	exit(0);
 }

@@ -705,7 +705,7 @@ void read_from_unnamed(int i){
 				log_message(log_msg);
 			}
 
-			sleep(config.auth_proc_time/1000);//durante o sleep o auth engine deve ser visto como indisponivel certo?????????????????????
+			sleep(config.auth_proc_time);
 			sem_wait(sem_read_count);
 			shared->read_count_shared[i] = 0;	
 			sem_post(sem_read_count);
