@@ -36,6 +36,9 @@ int fd_read_user,fd_read_back;
 
 int **pipes;
 
+pid_t pid_auth;
+pid_t pid_mon;
+
 int flag;//só deixar os pedidos de dados serem feitos depois do login ter sido registado
 
 bool validate_config(char * filename);
@@ -72,4 +75,6 @@ void check_full(queue *head, pthread_mutex_t sem);
 long long current_time_millis();
 void destroyQueue(queue **head);
 void sem_initializer();
+void signal_handler2();
+void signal_handler3();
 #endif

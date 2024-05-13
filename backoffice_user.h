@@ -9,7 +9,7 @@
 #define data "1#data_stats"
 #define reset "1#reset"
 void ler_mq();
-void signal_handle();
 int get_msg_id();
+void signal_handle();
 char input[MAX_STRING_SIZE];
 #endif //BACKOFFICE_USER_H

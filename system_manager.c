@@ -191,29 +191,20 @@ bool validate_config(char* filename) {
 void signal_handler(){
 	if(getpid() == system_manager_pid){
 		free_shared();
-		kill(0, SIGTERM);
 		exit(0);
-	};
+	}
 }
 
 //-----------------Função que destroi semaforos, mutex, shared memory e message queue-----------------------
 void free_shared(){
+
 	log_message("SYSTEM SHUTTING DOWN, CLEANING ALL RESOURCES...\n");
 	sem_wait(sem_run);
 	shared->run = 0;
 	sem_post(sem_run);
-	pthread_join(receiver_thread,NULL);
-	pthread_join(sender_thread,NULL);
-	//ACHO QUE PODEMOS TIRAR ISTO 
-	/*
-	for(int i = 0; i < config.max_auth_servers; i ++){
-		printf("in\n");
-		close(pipes[i][0]);
-		close(pipes[i][1]);
-	}
-	*/
-	pthread_join(mobile_thread,NULL);
-	pthread_join(back_thread,NULL);
+	
+	while(wait(NULL)>0);
+
 	destroyQueue(&q_video);
 	destroyQueue(&q_other);
 	pthread_mutex_destroy(&mut_video);
@@ -236,12 +227,6 @@ void free_shared(){
 	if(sem_close(sem_run) == -1) log_message("ERROR CLOSING SEM\n");
 	if(sem_unlink("run") == -1) log_message("ERROR DESTROYING SEM\n");
 
-	if(unlink(USER_PIPE) == -1) log_message("ERROR UNLINKING USER_PIPE\n");
-	if(unlink(BACK_PIPE) == -1) log_message("ERROR UNLINKING BACK_PIPE\n");
-	if(fcntl(fd_read_back,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_BACK\n");
-	if(close(fd_read_back) == -1) log_message("ERROR CLOSING PIPE FD_READ_BACK\n");
-	if(fcntl(fd_read_user,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_USER\n");
-	if(close(fd_read_user) == -1) log_message("ERROR CLOSING PIPE FD_READ_USER\n");
 	if(shmdt(shared) == -1) log_message("ERROR DETACHING SHARED MEMORY\n");
 	if(shmctl(shm_id, IPC_RMID, NULL) == -1) log_message("ERROR REMOVING SHARED MEMORY\n");
 	if(remove(MSQ_FILE) == -1) log_message("ERROR REMOVING MESSAGE QUEUE\n");
@@ -282,7 +267,8 @@ void init_prog() {
     // Inicializar array read_count_shared diretamente
     for (int i = 0; i < config.max_auth_servers + 1; i++) {
         shared->read_count_shared[i] = 0;
-		log_message("AUTHORIZATION ENGINE %d READY");
+		snprintf(log_msg, sizeof(log_msg), "AUTHORIZATION ENGINE %d READY", i);
+		log_message(log_msg);
     }
 
 	shared->run = true;
@@ -324,22 +310,20 @@ void create_proc(){
 	auth_request_manager_pid = fork();
 	if(auth_request_manager_pid == 0){
 		auth_request_manager();
-		return;
+		exit(0);
 	}
 	else if(auth_request_manager_pid < 0){
 		log_message("AUTH_REQUEST_MANAGER FORK FAILED");
-		free_shared();
 		exit(1);
 	}
 
 	monitor_engine_pid = fork();
 	if(monitor_engine_pid == 0){
 		monitor_engine();
-		return;
+		exit(0);
 	}
 	else if(monitor_engine_pid < 0){
 		log_message("MONITOR_ENGINE FORK FAILED");
-		free_shared();
 		exit(1);
 	}
 	log_message("WAITING FOR CHILD PROCESSES TO FINISH");
@@ -352,6 +336,8 @@ void create_proc(){
 //Função que cria os pipes, as threads SENDER e RECEIVER e os AUTHORIZATION ENGINES
 //####################################################################################
 void auth_request_manager(){
+	pid_auth = getpid();
+	signal(SIGINT, signal_handler2);
 	log_message("PROCESS AUTHORIZATION_REQUEST_MANAGER CREATED");
 
 	create_unnamed_pipes();
@@ -380,6 +366,24 @@ void auth_request_manager(){
 		log_message("CANNOT JOIN SENDER_THREAD");
 		free_shared();
 		exit(1);
+	}
+}
+
+void signal_handler2(){
+	if(getpid()==pid_auth){
+		pthread_cancel(receiver_thread);
+		pthread_cancel(sender_thread);
+		while(wait(NULL)>0);
+		for(int i = 0; i < config.max_auth_servers; i ++){
+			close(pipes[i][0]);
+		}
+		
+		if(unlink(USER_PIPE) == -1) log_message("ERROR UNLINKING USER_PIPE\n");
+		if(unlink(BACK_PIPE) == -1) log_message("ERROR UNLINKING BACK_PIPE\n");
+		if(fcntl(fd_read_back,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_BACK\n");
+		if(close(fd_read_back) == -1) log_message("ERROR CLOSING PIPE FD_READ_BACK\n");
+		if(fcntl(fd_read_user,F_GETFL) == -1) log_message("ERROR DETACHING PIPE FD_READ_USER\n");
+		if(close(fd_read_user) == -1) log_message("ERROR CLOSING PIPE FD_READ_USER\n");
 	}
 }
 
@@ -915,6 +919,8 @@ int countUsers(queue *head, pthread_mutex_t sem) {
 }
 
 void monitor_engine(){
+	pid_mon = getpid();
+	signal(SIGINT, signal_handler3);
     log_message("PROCESS MONITOR_ENGINE CREATED");
     mq = get_msg_id();
     if (pthread_create(&mobile_thread, NULL, plafond_function, NULL) != 0)
@@ -940,6 +946,13 @@ void monitor_engine(){
         exit(1);
     }
 } 
+
+void signal_handler3(){
+	if(getpid()== pid_mon){
+		pthread_cancel(mobile_thread);
+		pthread_cancel(back_thread);
+	}
+}
 
 void *plafond_function(){
 	sem_wait(sem_run);
