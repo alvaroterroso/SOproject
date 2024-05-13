@@ -317,7 +317,7 @@ void create_proc(){
 	auth_request_manager_pid = fork();
 	if(auth_request_manager_pid == 0){
 		auth_request_manager();
-		exit(0);
+		exit(1);
 	}
 	else if(auth_request_manager_pid < 0){
 		log_message("AUTH_REQUEST_MANAGER FORK FAILED");
@@ -460,6 +460,7 @@ void *receiver_function(void *arg){
         int nfds = (fd_read_user > fd_read_back ? fd_read_user : fd_read_back) + 1;
         if(select(nfds,&read_set,NULL,NULL,NULL)>0){
             if (FD_ISSET(fd_read_user, &read_set)) {
+
                 ssize_t n = read(fd_read_user, buf, MAX_STRING_SIZE);
                 if (n > 0) {
 					char* dados = malloc(n +1);
@@ -680,7 +681,7 @@ void read_from_unnamed(int i){
 				log_message(log_msg);
 			}
 
-			sleep(config.auth_proc_time);//durante o sleep o auth engine deve ser visto como indisponivel certo?????????????????????
+			sleep(config.auth_proc_time/1000);//durante o sleep o auth engine deve ser visto como indisponivel certo?????????????????????
 			sem_wait(sem_read_count);
 			shared->read_count_shared[i] = 0;	
 			sem_post(sem_read_count);
@@ -758,7 +759,8 @@ void manage_auth(char *buf){
         }else{
             sem_wait(sem_plafond);
 			if(shared->user_array[user_index].plafond < atoi(part3)){
-				log_message("MOBILE USER [%d] DOESNT HAVE ENOUGH PLAFOND TO CONTINUE...");
+				sprintf(log_msg,"MOBILE USER [%s] DOESNT HAVE ENOUGH PLAFOND TO CONTINUE...",part1);
+				log_message(log_msg);
 				sem_post(sem_plafond);
 				sem_wait(sem_flag);
 				flag=atoi(part1);

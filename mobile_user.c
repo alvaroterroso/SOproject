@@ -43,7 +43,6 @@ int main(int argc, char **argv){
 		exit(0);
 	}else if(son_mq == -1){
 		printf("Error creating read_mq proc\n");
-		clear_resources();
 		exit(1);
 	}
 	
@@ -58,7 +57,6 @@ int main(int argc, char **argv){
 
 			if((fd_write = open(USER_PIPE, O_WRONLY))<0){
 				printf("CANNOT OPEN PIPE FOR WRITING\n");
-				clear_resources();
 				exit(1);
 			}
 
@@ -95,9 +93,6 @@ int main(int argc, char **argv){
 	}
 }
 
-void clear_resources(){
-	pthread_mutex_destroy(&request_number);
-}
 
 void signal_handler(){
 	run=0;
@@ -110,7 +105,7 @@ void signal_handler(){
 
 	kill(son_mq, SIGTERM);  // Envia sinal SIGTERM para o processo filho
     wait(NULL);
-	clear_resources();
+	pthread_mutex_destroy(&request_number);
 	exit(0);
 }
 
