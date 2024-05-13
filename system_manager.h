@@ -77,4 +77,5 @@ void destroyQueue(queue **head);
 void sem_initializer();
 void signal_handler2();
 void signal_handler3();
+bool check_run();
 #endif

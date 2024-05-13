@@ -137,7 +137,6 @@ void *send_video() {
 			--new_mobile_user.auth_request_number;
 			pthread_mutex_unlock(&request_number);
 			
-			printf("sleep video: %d\n",new_mobile_user.video_interval );
 			sleep(new_mobile_user.video_interval);
 		}
     }
@@ -167,7 +166,6 @@ void *send_music() {
 			--new_mobile_user.auth_request_number;
 			pthread_mutex_unlock(&request_number);
 			
-			printf("sleep video: %d\n",new_mobile_user.music_interval );
 			sleep(new_mobile_user.music_interval);
 		}
     }
@@ -197,7 +195,6 @@ void *send_social() {
 			--new_mobile_user.auth_request_number;
 			pthread_mutex_unlock(&request_number);
 			
-			printf("sleep social: %d\n",new_mobile_user.social_interval );
 			sleep(new_mobile_user.social_interval);
 		}
     }

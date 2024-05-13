@@ -73,6 +73,7 @@ void sem_initializer(){
 	sem_unlink("flag");
 	sem_unlink("go");
 	sem_unlink("run");
+	sem_unlink("times");
 	sem_shared = sem_open("shared", O_CREAT|O_EXCL, 0777,1);
 	if (sem_shared == SEM_FAILED) {
 		log_message("ERROR OPENING SEM_SHARED");
@@ -121,6 +122,11 @@ void sem_initializer(){
 	sem_run = sem_open("run",O_CREAT|O_EXCL, 0777,1);
 	if (sem_run == SEM_FAILED) {
 		log_message("ERROR OPENING SEM_RUN");
+    	exit(1);
+	}
+	sem_times = sem_open("times",O_CREAT|O_EXCL, 0777,1);
+	if (sem_times == SEM_FAILED) {
+		log_message("ERROR OPENING SEM_TIMES");
     	exit(1);
 	}
 }
@@ -262,6 +268,7 @@ void init_prog() {
         shared->user_array[i].id = -1;  
         shared->user_array[i].plafond = -1;  
         shared->user_array[i].plafond_ini = -1;  
+		shared->user_array[i].times = 0;
     }
 
     // Inicializar array read_count_shared diretamente
@@ -443,9 +450,7 @@ void *receiver_function(void *arg){
     
     int cont=0;
     char buf[MAX_STRING_SIZE];
-	sem_wait(sem_run);
-    while(shared->run){
-		sem_post(sem_run);
+    while(check_run()){
         fd_set read_set;
 		memset(buf, 0, MAX_STRING_SIZE);
         FD_ZERO(&read_set);
@@ -457,28 +462,28 @@ void *receiver_function(void *arg){
             if (FD_ISSET(fd_read_user, &read_set)) {
                 ssize_t n = read(fd_read_user, buf, MAX_STRING_SIZE);
                 if (n > 0) {
-					printf("DEBUG: %s\n", buf);
 					char* dados = malloc(n +1);
 					memcpy(dados, buf, n);
 					dados[n] = '\0';
                     char *segment = strtok(dados, ";");
 					while (segment != NULL) {
                         printf("\n\nRECEIVED: %s [%d]\n\n", segment, ++cont);
-                        //process_message_from_pipe(segment);
+                        process_message_from_pipe(segment);
                         segment = strtok(NULL, ";");
                     }
                 }
             }
-        }if(FD_ISSET(fd_read_back,&read_set)){
-			char buf[MAX_STRING_SIZE];
-			int n=read(fd_read_back, buf, MAX_STRING_SIZE);
-			if(n>0){
-				add_queue(&q_other,buf, mut_other);
-				sem_post(sem_go);
-				log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
-			}else log_message("\nERROR READING MESSAGE FROM NAMMED PIPE.\n");
-		}sem_wait(sem_run);
-    }sem_post(sem_run);
+			if(FD_ISSET(fd_read_back,&read_set)){
+				char buf[MAX_STRING_SIZE];
+				int n=read(fd_read_back, buf, MAX_STRING_SIZE);
+				if(n>0){
+					add_queue(&q_other,buf, mut_other);
+					sem_post(sem_go);
+					log_message("BACKOFFICE_USER REQUEST ADDED TO OTHERS QUEUE\n");
+				}
+			}
+		}
+    }
     return NULL;
 }
 
@@ -639,9 +644,7 @@ void create_autho_engines(){
 void read_from_unnamed(int i){
 	char message[MAX_STRING_SIZE];
 	close(pipes[i][1]);
-	sem_wait(sem_run);
-	while(shared->run){
-		sem_post(sem_run);
+	while(check_run()){
 		int n;
 		if((n = read(pipes[i][0],message, MAX_STRING_SIZE)) > 0){
 			message[n]='\0';
@@ -683,7 +686,6 @@ void read_from_unnamed(int i){
 			sem_post(sem_read_count);
 		}else log_message("EROR READING FROM UNNAMED PIPE.");
 	}
-	sem_post(sem_run);
 	return;
 }
 
@@ -755,13 +757,19 @@ void manage_auth(char *buf){
             log_message("MOBILE USER NOT FOUND.");
         }else{
             sem_wait(sem_plafond);
-            shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
+			if(shared->user_array[user_index].plafond < atoi(part3)){
+				log_message("MOBILE USER [%d] DOESNT HAVE ENOUGH PLAFOND TO CONTINUE...");
+				sem_post(sem_plafond);
+				sem_wait(sem_flag);
+				flag=atoi(part1);
+				sem_post(sem_flag);
+			}else{
+				shared->user_array[user_index].plafond = shared->user_array[user_index].plafond - atoi(part3);
+				sem_post(sem_plafond);
+				log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
+				sem_post(sem_monitor);
+			}
 
-            if(shared->user_array[user_index].plafond < 0)  shared->user_array[user_index].plafond = 0;
-            sem_post(sem_plafond);
-            log_message("MOBILE USER ADDED REQUEST SUCCESSEFULLY.");
-            sem_post(sem_monitor);
-        
         }
     }else if(atoi(part1) == 1) { // mensagem do BACK_OFFICE
 
@@ -955,9 +963,7 @@ void signal_handler3(){
 }
 
 void *plafond_function(){
-	sem_wait(sem_run);
-    while(shared->run){
-		sem_post(sem_run);
+    while(check_run()){
         sem_wait(sem_monitor);
 		sem_wait(sem_flag);
 		if(flag!=0){//se a flag por diferente de 0, é porque houve um user que nao conseguiu dar login, e a flag tem o seu id para eu saber que type usar na mensagem
@@ -971,6 +977,7 @@ void *plafond_function(){
 		}
 		else{
 			sem_post(sem_flag);
+			sem_wait(sem_shared);
 			for(int i =0; i<config.max_mobile_user; i++){
 				if((shared->user_array[i].id > 1)){
 					plafond_msg monitor;
@@ -981,34 +988,48 @@ void *plafond_function(){
 					log_message(log_msg);
 
 					if(plafond_gasto == 1 ){
-						monitor.id= (long)shared->user_array->id;
-						strcpy(monitor.msg, PLA_100);
-						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-					}else if(plafond_gasto > 0.9){
-						monitor.id= (long)shared->user_array->id;
-						strcpy(monitor.msg, PLA_90);
-						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
-					}else if(plafond_gasto > 0.8){
-						monitor.id= (long)shared->user_array->id;
-						strcpy(monitor.msg, PLA_80);
-						monitor.msg[sizeof(monitor.msg) - 1] = '\0';
-						msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+						sem_wait(sem_times);
+						if(shared->user_array[i].times <= 2){
+							monitor.id= (long)shared->user_array[i].id;
+							strcpy(monitor.msg, PLA_100);
+							monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+							msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+							shared->user_array[i].times += 1;
+						}
+						sem_post(sem_times);
+
+					}else if(plafond_gasto >= 0.9){
+						sem_wait(sem_times);
+						if(shared->user_array[i].times <= 1){
+							monitor.id= (long)shared->user_array[i].id;
+							strcpy(monitor.msg, PLA_90);
+							monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+							msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+							shared->user_array[i].times += 1;
+						}
+						sem_post(sem_times);
+
+					}else if(plafond_gasto >= 0.8){
+						sem_wait(sem_times);
+						if(shared->user_array[i].times < 1){
+							monitor.id= (long)shared->user_array[i].id;
+							strcpy(monitor.msg, PLA_80);
+							monitor.msg[sizeof(monitor.msg) - 1] = '\0';
+							msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
+							shared->user_array[i].times += 1;
+						}
+						sem_post(sem_times);
 					}
 				}
 			}
+			sem_post(sem_shared);
 		}
-		sem_wait(sem_run);
     }
-	sem_post(sem_run);
     return NULL;
 }
 
 void *statics_function(){
-	sem_wait(sem_run);
-	while(shared->run){
-		sem_post(sem_run);
+	while(check_run()){
 		sleep(30);
 		sem_wait(sem_statics);
         char buff[1024];
@@ -1022,9 +1043,7 @@ void *statics_function(){
         monitor.msg[sizeof(monitor.msg) - 1] = '\0';
         msgsnd(mq,&monitor,sizeof(monitor)-sizeof(long),0);
 		log_message("PERIODIC STATS HAVE BEEN SENT");
-		sem_wait(sem_run);
 	}
-	sem_post(sem_run);
     return NULL;
 }
 
@@ -1051,4 +1070,15 @@ long long current_time_millis() {
         perror("Failed to get time");
         return -1;
     }
+}
+
+bool check_run(){
+	sem_wait(sem_run);
+	if(shared->run){
+		sem_post(sem_run);
+		return true;
+	}else{
+		sem_post(sem_run);
+		return false;
+	}
 }
