@@ -1,0 +1,3 @@
+This is a final semester project for the discipline Operative Systems, @ University of Coimbra.
+Developed by me and my excelente colleague and good fried Rui Oliveira (check him out -> RuiOliv4444)
+Might update later, but for now...
